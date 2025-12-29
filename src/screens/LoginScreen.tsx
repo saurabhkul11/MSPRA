@@ -1,0 +1,297 @@
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ImageBackground,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+} from 'react-native';
+import axios from 'axios';
+import MD5 from 'crypto-js/md5';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/AppNavigator';
+import Icon from 'react-native-vector-icons/Feather';
+
+import { useAuth } from '../context/AuthContext'; // ✅ ADD CONTEXT
+
+
+type LoginScreenNavigationProp =
+  NativeStackNavigationProp<RootStackParamList, 'Login'>;
+
+const LoginScreen = () => {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [remember, setRemember] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const navigation = useNavigation<LoginScreenNavigationProp>();
+  const { login, userID, token } = useAuth(); // ✅ CONTEXT
+
+  const handleLogin = async () => {
+    if (!username.trim() || !password.trim()) {
+      Alert.alert('त्रुटी', 'कृपया वापरकर्त्याचे नाव आणि पासवर्ड टाका');
+      return;
+    }
+
+    setLoading(true);
+
+    const apiUrl = 'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/Login';
+    const passwordHash = MD5(password).toString().toUpperCase();
+
+    try {
+      const response = await axios.post(
+        apiUrl,
+        {
+          username: username.trim(),
+          userpassword: passwordHash,
+        },
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 15000,
+        }
+      );
+
+     if (response.data?.responseCode === 2000) {
+  const user = response.data.items[0];
+
+ login(user.userID, user.bearerToken, username.trim());
+
+
+  navigation.reset({
+    index: 0,
+    routes: [{ name: "Home" }],
+  });
+}
+      
+      
+      else {
+        Alert.alert(
+          '❌ अयशस्वी',
+          response.data?.responseMessage ||
+            'वापरकर्त्याचे नाव किंवा पासवर्ड चुकीचा आहे'
+        );
+      }
+    } catch (error) {
+      Alert.alert('त्रुटी', 'सर्व्हरशी संपर्क साधण्यात अडचण आली');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={{ flex: 1 }}
+    >
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1 }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <ImageBackground
+          source={require('../assets/images/login_bg.jpg')}
+          style={styles.bg}
+          resizeMode="cover"
+        >
+          <View style={styles.container}>
+            <View style={styles.card}>
+              {/* Username */}
+              <Text style={styles.label}>
+                वापरकर्त्याचे नाव<Text style={styles.required}>*</Text>
+              </Text>
+              <TextInput
+                style={styles.input}
+                value={username}
+                onChangeText={setUsername}
+                placeholder="वापरकर्त्याचे नाव टाका"
+                placeholderTextColor="#888"
+                autoCapitalize="none"
+                keyboardType="numeric"
+              />
+
+              {/* Password */}
+              <Text style={styles.label}>
+                पासवर्ड<Text style={styles.required}>*</Text>
+              </Text>
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  style={styles.passwordInput}
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="पासवर्ड टाका"
+                  placeholderTextColor="#888"
+                  secureTextEntry={!showPassword}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.eyeButton}
+                >
+                  <Icon
+                    name={showPassword ? 'eye-off' : 'eye'}
+                    size={20}
+                    color="#555"
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {/* Remember & Forgot */}
+              <View style={styles.rowBetween}>
+                <TouchableOpacity
+                  style={styles.rememberRow}
+                  onPress={() => setRemember(!remember)}
+                >
+                  <View
+                    style={[
+                      styles.checkbox,
+                      remember && styles.checkboxChecked,
+                    ]}
+                  />
+                  <Text style={styles.rememberText}>माझी आठवण ठेवा</Text>
+                </TouchableOpacity>
+
+                {/* <TouchableOpacity
+                  onPress={() => {
+                    if (userID && token) {
+                      navigation.navigate('ForgotPassword', {
+                        userID,
+                        bearerToken: token,
+                      });
+                    } else {
+                      Alert.alert('त्रुटी', 'कृपया प्रथम लॉगिन करा');
+                    }
+                  }}
+                >
+                  <Text style={styles.forgotText}>पासवर्ड विसरलात?</Text>
+                </TouchableOpacity> */}
+
+<TouchableOpacity
+  onPress={() => navigation.navigate('ForgotPassword')}
+>
+  <Text style={styles.forgotText}>पासवर्ड विसरलात?</Text>
+</TouchableOpacity>
+
+
+
+              </View>
+
+              {/* Login Button */}
+              <TouchableOpacity
+                style={styles.loginButton}
+                onPress={handleLogin}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.loginText}>लॉगिन करा</Text>
+                )}
+              </TouchableOpacity>
+
+              {/* Signup */}
+              {/* <View style={styles.signupContainer}>
+                <Text style={styles.signupText}>खाते नाहीये का? </Text>
+                <TouchableOpacity>
+                  <Text style={styles.signupLink}>खाते तयार करा</Text>
+                </TouchableOpacity>
+              </View> */}
+            </View>
+          </View>
+        </ImageBackground>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+};
+
+
+const styles = StyleSheet.create({
+  bg: { flex: 1 },
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 25,
+    paddingVertical: 40,
+  },
+  card: {
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderRadius: 20,
+    padding: 20,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 4,
+    marginTop: 250,
+  },
+  label: { fontSize: 15, color: '#000', marginTop: 10 },
+  required: { color: 'red' },
+  input: {
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.2)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    marginTop: 5,
+  },
+  passwordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.2)',
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    marginTop: 5,
+  },
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
+    color: '#000',
+  },
+  eyeButton: {
+    paddingHorizontal: 10,
+  },
+  rowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  rememberRow: { flexDirection: 'row', alignItems: 'center' },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderWidth: 1,
+    borderColor: '#666',
+    borderRadius: 3,
+    marginRight: 6,
+  },
+  checkboxChecked: { backgroundColor: '#008000', borderColor: '#008000' },
+  rememberText: { color: '#333', fontSize: 13 },
+  forgotText: { color: '#0066cc', fontSize: 13, fontWeight: '500' },
+  loginButton: {
+    backgroundColor: '#008000',
+    borderRadius: 30,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  loginText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  signupContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 15,
+  },
+  signupText: { fontSize: 14, color: '#000' },
+  signupLink: { color: '#0066cc', fontWeight: '600', fontSize: 14 },
+});
+
+export default LoginScreen;
+
