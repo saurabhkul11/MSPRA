@@ -1,32 +1,32 @@
-import React from "react";
-import { View, Text } from "react-native";
+// import React from "react";
+// import { Text } from "react-native";
 
-type Props = {
-  formNo: number;
-};
+// type Props = {
+//   formNo: number;
+// };
 
-const FormLayout: React.FC<Props> = ({ formNo }) => {
-  switch (formNo) {
-    case 1:
-      return <Text>Form 1 Content</Text>;
-    case 2:
-      return <Text>Form 2 Content</Text>;
-    case 3:
-      return <Text>Form 3 Content</Text>;
-    case 4:
-      return <Text>Form 4 Content</Text>;
-    case 5:
-      return <Text>Form 5 Content</Text>;
-    case 6:
-      return <Text>Form 6 Content</Text>;
-    case 7:
-      return <Text>Form 7 Content</Text>;
-    case 8:
-      return <Text>Form 8 Content</Text>;
-    default:
-      return <Text>Invalid Form</Text>;
-  }
-};
+// const FormLayout: React.FC<Props> = ({ formNo }) => {
+//   switch (formNo) {
+//     case 1:
+//       return <Text>Form 1 Content</Text>;
+//     case 2:
+//       return <Text>Form 2 Content</Text>;
+//     case 3:
+//       return <Text>Form 3 Content</Text>;
+//     case 4:
+//       return <Text>Form 4 Content</Text>;
+//     case 5:
+//       return <Text>Form 5 Content</Text>;
+//     case 6:
+//       return <Text>Form 6 Content</Text>;
+//     case 7:
+//       return <Text>Form 7 Content</Text>;
+//     case 8:
+//       return <Text>Form 8 Content</Text>;
+//     default:
+//       return <Text>Invalid Form</Text>;
+//   }
+// };
 
 // export default FormLayout;
 

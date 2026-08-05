@@ -1,3 +1,5 @@
+/* eslint-disable react-native/no-inline-styles */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // src/screens/components/ProgressSteps.tsx
 import React, { useRef, useEffect, useState } from 'react';
 import {
@@ -10,7 +12,7 @@ import {
   Alert,
 } from 'react-native';
 //import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from '../../context/AuthContext';
 
 interface Props {
   totalQuestions: number;
@@ -35,9 +37,9 @@ const ProgressSteps: React.FC<Props> = ({
   const [loading, setLoading] = useState<boolean>(true);
   // const [userID, setUserID] = useState<string | null>(null);
   // const [token, setToken] = useState<string | null>(null);
+  const [answeredQuestionIds, setAnsweredQuestionIds] = useState<number[]>([]);
 
-
-const { userID, token } = useAuth();
+  const { userID, token } = useAuth();
   // ✅ Fetch questions
   const fetchQuestions = async (id: string, bearerToken: string) => {
     try {
@@ -51,7 +53,7 @@ const { userID, token } = useAuth();
             Authorization: `Bearer ${bearerToken}`,
           },
           body: JSON.stringify({ Userid: id }),
-        }
+        },
       );
 
       const text = await response.text();
@@ -68,6 +70,63 @@ const { userID, token } = useAuth();
       setLoading(false);
     }
   };
+
+  const fetchAnsweredStatus = async (
+    questionId: number,
+    userId: string,
+    bearerToken: string,
+  ): Promise<boolean> => {
+    try {
+      const response = await fetch(
+        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/PreExamQuestion/GetPreQuestionByQuestionID',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${bearerToken}`,
+          },
+          body: JSON.stringify({
+            QuesionID: String(questionId),
+            Userid: userId,
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (data?.responseCode === 2000 && Array.isArray(data.items)) {
+        return data.items.some((item: any) => Number(item.optAnsNo) > 0);
+      }
+
+      return false;
+    } catch (err) {
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    const checkAnsweredQuestions = async () => {
+      if (!userID || !token || questions.length === 0) return;
+
+      const answered: number[] = [];
+
+      for (const q of questions) {
+        const hasAnswer = await fetchAnsweredStatus(
+          q.questionID,
+          userID,
+          token,
+        );
+
+        if (hasAnswer) {
+          answered.push(q.questionID);
+        }
+      }
+
+      setAnsweredQuestionIds(answered);
+    };
+
+    checkAnsweredQuestions();
+  }, [questions, userID, token]);
 
   useEffect(() => {
     if (userID && token) {
@@ -95,27 +154,31 @@ const { userID, token } = useAuth();
         {questions.map((item, index) => {
           const stepNumber = index + 1; // ✅ defined here
           const isSubmitted = submittedSteps.includes(stepNumber);
+          const isAnswered = answeredQuestionIds.includes(item.questionID);
 
           return (
             <TouchableOpacity
               key={item.questionID}
               style={[
                 styles.circle,
-              isSubmitted
-  ? styles.submittedCircle     // 🟡 AFTER SUBMIT
-  : stepNumber === currentQuestion
-  ? styles.activeCircle        // 🔵 CURRENT ONLY IF NOT SUBMITTED
-  : styles.inactiveCircle
-
+                isAnswered
+                  ? styles.submittedCircle // 🟢 GREEN
+                  : isSubmitted
+                  ? styles.submittedCircle // 🟡 YELLOW
+                  : stepNumber === currentQuestion
+                  ? styles.activeCircle // 🔵 BLUE
+                  : styles.inactiveCircle,
               ]}
               onPress={() => onStepPress?.(stepNumber)}
             >
               <Text
                 style={[
                   styles.circleText,
-                  stepNumber === currentQuestion || isSubmitted
-                    ? { color: '#000' }
-                    : styles.inactiveText,
+                  stepNumber === currentQuestion
+                    ? { color: '#FFF' } // ⚪ selected → white
+                    : isSubmitted
+                    ? { color: '#000' } // ⚫ submitted/answered → black
+                    : styles.inactiveText, // ⚪ inactive
                 ]}
               >
                 {item.srNo}
@@ -149,8 +212,8 @@ const styles = StyleSheet.create({
     borderColor: '#0B4FA3',
   },
   submittedCircle: {
-    backgroundColor: '#FFD700', // ✅ YELLOW
-    borderColor: '#FFD700',
+    backgroundColor: '#1b8f4d', // ✅ green
+    borderColor: '#1b8f4d',
   },
   inactiveCircle: {
     backgroundColor: '#fff',
@@ -163,8 +226,6 @@ const styles = StyleSheet.create({
     color: '#000',
   },
 });
-
-
 
 // // src/screens/components/ProgressSteps.tsx
 // import React, { useRef, useEffect, useState } from 'react';

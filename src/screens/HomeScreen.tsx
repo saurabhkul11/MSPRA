@@ -1,3 +1,5 @@
+/* eslint-disable react-native/no-inline-styles */
+/* eslint-disable react/no-unstable-nested-components */
 // src/screens/HomeScreen.tsx
 import React from 'react';
 import { useRoute, RouteProp } from '@react-navigation/native';

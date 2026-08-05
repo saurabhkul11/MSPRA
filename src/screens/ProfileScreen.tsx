@@ -1,10 +1,38 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
-import { DrawerActions, useNavigation } from '@react-navigation/native';
+/* eslint-disable radix */
+/* eslint-disable react-native/no-inline-styles */
+/* eslint-disable react/no-unstable-nested-components */
+
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable @typescript-eslint/no-shadow */
+
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
+import { DrawerActions, useFocusEffect, useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { Picker } from '@react-native-picker/picker';
 import { useLayoutEffect } from 'react';
-
+import { useAuth } from '../context/AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { pick } from '@react-native-documents/picker';
+import FileViewer from 'react-native-file-viewer';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { Linking } from 'react-native';
+import Pdf from 'react-native-pdf';
+import { Modal, Dimensions } from 'react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
+import RNFS from 'react-native-fs';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import CustomHeader from '../utils/CustomHeader';
 
 interface ProfileData {
   userName?: string;
@@ -37,101 +65,103 @@ const ProfileScreen = ({ route }: any) => {
   const { userID, bearerToken } = route.params;
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<ProfileData>({});
-const [peopleGradeList, setPeopleGradeList] = useState<{ label: string; value: string }[]>([]);
-const [selectedPeopleGrade, setSelectedPeopleGrade] = useState('');
-const [selectedVillageIncluded, setSelectedVillageIncluded] = useState('');
-const [village, setVillage] = useState('');
-const [mobileNumber, setMobileNumber] = useState('');
-const [emailId, setEmailId] = useState('');
-const [villagePeopleCount, setVillagePeopleCount] = useState('');
-const [femaleCount, setFemaleCount] = useState('');
-const [maleCount, setMaleCount] = useState('');
-const [familyCount, setFamilyCount] = useState('');
-const [voterCount, setVoterCount] = useState('');
-const [farmerCount, setFarmerCount] = useState('');
-const [lgdCode, setlgdCode] = useState('');
-const [otherVillageName, setOtherVillageName] = useState('');
-const [showOtpButton, setShowOtpButton] = useState(false);
-const [otpSent, setOtpSent] = useState(false);
-const [showOtpVerifySection, setShowOtpVerifySection] = useState(false);
-const [otpVerified, setOtpVerified] = useState(false);
-const [otp, setOtp] = useState('');
+  const [peopleGradeList, setPeopleGradeList] = useState<
+    { label: string; value: string }[]
+  >([]);
+  const [selectedPeopleGrade, setSelectedPeopleGrade] = useState('');
+  const [selectedVillageIncluded, setSelectedVillageIncluded] = useState('');
+  const [village, setVillage] = useState('');
+  const [mobileNumber, setMobileNumber] = useState('');
+  const [emailId, setEmailId] = useState('');
+  const [villagePeopleCount, setVillagePeopleCount] = useState('');
+  const [femaleCount, setFemaleCount] = useState('');
+  const [maleCount, setMaleCount] = useState('');
+  const [familyCount, setFamilyCount] = useState('');
+  const [voterCount, setVoterCount] = useState('');
+  const [farmerCount, setFarmerCount] = useState('');
+  const [lgdCode, setlgdCode] = useState('');
+  const [otherVillageName, setOtherVillageName] = useState('');
+  const [showOtpButton, setShowOtpButton] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [showOtpVerifySection, setShowOtpVerifySection] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [otp, setOtp] = useState('');
+  const { updateCounts } = useAuth();
+
+  const [transgenderCount, setTransgenderCount] = useState('');
+  const [pdfFile, setPdfFile] = useState<any>(null);
+  const [base64File, setBase64File] = useState('');
+  const [showPdf, setShowPdf] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState('');
 
 
-useLayoutEffect(() => {
-  navigation.setOptions({
-    headerLeft: () => (
-      <Icon
-        name="menu"
-        size={28}
-        color="#fff"
-        style={{ marginLeft: 15 }}
-        onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
-      />
-    ),
-    headerStyle: { backgroundColor: '#0B4FA3' },
-    headerTintColor: '#fff',
-    headerTitle: 'वापरकर्ता तपशील',
-    headerTitleAlign: 'center',
-  });
-}, [navigation]);
-
+  useFocusEffect(
+  useCallback(() => {
+    console.log('Profile Screen Focused');
+    fetchProfile();
+    fetchDropdownList();
+  }, [])
+);
 
   useEffect(() => {
-    fetchProfile();
-      fetchDropdownList();
-  }, []);
-
-   const fetchDropdownList = async () => {
-  try {
-    const response = await fetch(
-      'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/GetCommonDDList',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${bearerToken}`,
-        },
-        body: JSON.stringify({}), // ✅ Empty body
-      }
-    );
-
-    if (!response.ok) {
-      const text = await response.text();
-      console.error('❌ Dropdown API HTTP Error:', response.status, text);
-      return;
+    if (profile) {
+      updateCounts(
+        profile.voterCount || '0',
+        profile.villagePeopleCount || '0',
+        profile.familyCount || '0',
+        profile.farmerCount || '0',
+      );
     }
+  }, [profile]);
 
-    const json = await response.json();
-    console.log('✅ Dropdown Response:', json);
-
-    // ✅ Correct structure
-    if (
-      json.responseCode === 2000 &&
-      json.items &&
-      json.items.length > 0 &&
-      json.items[0].peopleGradesList
-    ) {
-      const dropdownData = json.items[0].peopleGradesList.map(
-        (item: any) => ({
-          value: item.value,
-          label: item.text,
-        })
+  const fetchDropdownList = async () => {
+    try {
+      const response = await fetch(
+        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/GetCommonDDList',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${bearerToken}`,
+          },
+          body: JSON.stringify({}), // ✅ Empty body
+        },
       );
 
-      setPeopleGradeList(dropdownData);
-      console.log('✅ Parsed Dropdown:', dropdownData);
-    } else {
-      console.warn('⚠️ No data found for dropdown:', json.responseMessage);
+      if (!response.ok) {
+        const text = await response.text();
+        console.error('❌ Dropdown API HTTP Error:', response.status, text);
+        return;
+      }
+
+      const json = await response.json();
+      console.log('✅ Dropdown Response:', json);
+
+      // ✅ Correct structure
+      if (
+        json.responseCode === 2000 &&
+        json.items &&
+        json.items.length > 0 &&
+        json.items[0].peopleGradesList
+      ) {
+        const dropdownData = json.items[0].peopleGradesList.map(
+          (item: any) => ({
+            value: String(item.value),
+            label: item.text,
+          }),
+        );
+
+        setPeopleGradeList(dropdownData);
+        console.log('✅ Parsed Dropdown:', dropdownData);
+      } else {
+        console.warn('⚠️ No data found for dropdown:', json.responseMessage);
+      }
+    } catch (err) {
+      console.error('❌ Dropdown fetch error:', err);
     }
-  } catch (err) {
-    console.error('❌ Dropdown fetch error:', err);
-  }
-};
+  };
 
-
-
- const fetchProfile = async () => {
+  const fetchProfile = async () => {
     try {
       const response = await fetch(
         'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/GetUserProfile',
@@ -142,7 +172,7 @@ useLayoutEffect(() => {
             Authorization: `Bearer ${bearerToken}`,
           },
           body: JSON.stringify({ userid: userID }),
-        }
+        },
       );
 
       const json = await response.json();
@@ -150,18 +180,58 @@ useLayoutEffect(() => {
 
       if (json.responseCode === 2000 && json.items?.length > 0) {
         const userProfile = json.items[0];
-        setProfile(userProfile); 
-        setSelectedPeopleGrade(userProfile.peopleGrade || '');
+        setProfile(userProfile);
 
-      if (!userProfile.mobileNumber || userProfile.mobileNumber.trim() === '') {
-        setShowOtpButton(true);
+        // ✅ SAVE FILE URL
+        setPdfUrl(userProfile.fileUrl || '');
+
+        console.log('PDF URL:', userProfile.fileUrl);
+        console.log(
+  'API Mobile Number:',
+  JSON.stringify(userProfile.mobileNumber),
+);
+
+        // ✅ SAFE VERSION
+        setTransgenderCount(
+          (userProfile.Transgender ?? userProfile.transgender ?? '').toString(),
+        );
+
+        // ✅ SAVE TO ASYNC STORAGE
+        await AsyncStorage.setItem('voterCount', userProfile.voterCount ?? '');
+
+        await AsyncStorage.setItem(
+          'villagePeopleCount',
+          userProfile.villagePeopleCount ?? '',
+        );
+
+        await AsyncStorage.setItem(
+          'familyCount',
+          userProfile.familyCount ?? '',
+        );
+        await AsyncStorage.setItem(
+          'farmerCount',
+          userProfile.farmerCount ?? '',
+        );
+
+        console.log('✅ Saved to AsyncStorage:', {
+          voterCount: userProfile.voterCount,
+          villagePeopleCount: userProfile.villagePeopleCount,
+          familyCount: userProfile.familyCount,
+          farmerCount: userProfile.farmerCount,
+        });
+
+        setSelectedPeopleGrade(String(userProfile.peopleGrade || ''));
+        setSelectedVillageIncluded(String(userProfile.addvillage || ''));
+
+        if (
+          !userProfile.mobileNumber ||
+          userProfile.mobileNumber.trim() === ''
+        ) {
+          setShowOtpButton(true);
+        } else {
+          setShowOtpButton(false);
+        }
       } else {
-        setShowOtpButton(false);
-      }
-        
-      } 
-      else 
-        {
         Alert.alert('Error', json.responseMessage || 'No profile data found');
       }
     } catch (error) {
@@ -181,260 +251,336 @@ useLayoutEffect(() => {
     );
   }
 
-const handleSubmit = async () => {
+  const pickPdf = async () => {
+    try {
+      const res = await pick({
+        type: ['application/pdf'],
+      });
 
-  if (!bearerToken) {
-    Alert.alert('Error', 'Authentication token missing');
-    return;
-  }
-  try {
-    setLoading(true);
+      const file = res[0];
 
-    const payload = {
-      RoleId: 1,
-      UserName: profile.userName || '',
-      Village: profile.village || '',
-      PeopleGrade: parseInt(selectedPeopleGrade || '0'),
-      MobileNumber: profile.mobileNumber || '',
-      EmailId: profile.emailId || '',
-      VillagePeopleCount: parseInt(profile.villagePeopleCount || '0'),
-      FemaleCount: parseInt(profile.femalCount || '0'),
-      MaleCount: parseInt(profile.maleCount || '0'),
-      FamilyCount: parseInt(profile.familyCount || '0'),
-      VoterCount: parseInt(profile.voterCount || '0'),
-      FarmerCount: parseInt(profile.farmerCount || '0'),
-      CreatedBy: profile.userName || '',
-      LSGCode: profile.lgdCode|| '',
-      Addvillage: selectedVillageIncluded, // "Yes" or "No" from dropdown
-      othervillageName: profile.othervillageName || '',
-    };
-console.log('selectedPeopleGrade',selectedPeopleGrade);
-    console.log('📤 Update Payload:', payload);
+      console.log('ORIGINAL FILE:', file);
 
-    const response = await fetch(
-      'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/UpdateUserProfile',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${bearerToken}`,
-        },
-        body: JSON.stringify(payload),
-      }
-    );
+      // 🔥 create new path
+      const destPath = `${RNFS.DocumentDirectoryPath}/${file.name}`;
 
-    const json = await response.json();
-    console.log('✅ Update Response:', json);
+      // 🔥 copy file from content:// → file://
+      await RNFS.copyFile(file.uri, destPath);
 
-    if (json.responseCode === 1001) {
-      Alert.alert('✅ यशस्वी', json.responseMessage || 'Profile updated successfully!');
-    } else {
-      Alert.alert('⚠️ अयशस्वी', json.responseMessage || 'Failed to update profile');
+      const newFile = {
+        ...file,
+        fileCopyUri: `file://${destPath}`,
+      };
+
+      console.log('FINAL FILE PATH:', newFile.fileCopyUri);
+
+      setPdfFile(newFile);
+    } catch (err) {
+      console.log('Error picking file:', err);
     }
-  } catch (error) {
-    console.error('❌ Update error:', error);
-    Alert.alert('Error', 'Something went wrong while updating profile');
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
-  
-const handleGetOtp = async (mobileNumber: string) => {
-  if (!mobileNumber || mobileNumber.trim().length !== 10) {
-    Alert.alert('त्रुटी', 'कृपया वैध मोबाईल नंबर प्रविष्ट करा');
-    return;
-  }
+  const convertToBase64 = async () => {
+    try {
+      if (pdfFile?.fileCopyUri) {
+        const path = pdfFile.fileCopyUri.replace('file://', '');
 
-  try {
-    const response = await fetch(
-      'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/GetMobileOTPRegistration',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${bearerToken}`,
-        },
-        body: JSON.stringify({
-          MobileNumber: mobileNumber,
-        }),
+        const base64 = await RNFS.readFile(path, 'base64');
+
+        console.log('BASE64 GENERATED ✅');
+
+        return base64; // 🔥 return instead of setState
       }
-    );
-
-    const json = await response.json();
-    console.log('📲 OTP Response:', json);
-
-    if (json.responseCode === 2000 && json.items?.length > 0) {
-      const otpInfo = json.items[0];
-      Alert.alert('✅ यशस्वी', otpInfo.message || 'OTP पाठविण्यात आला आहे');
-      setOtpSent(true);
-      setShowOtpVerifySection(true); // ✅ Show OTP verify section
-    } else {
-      Alert.alert('त्रुटी', json.responseMessage || 'OTP पाठविण्यात अयशस्वी');
+      return '';
+    } catch (e) {
+      console.log('Base64 error:', e);
+      return '';
     }
-  } catch (error) {
-    console.error('OTP Error:', error);
-    Alert.alert('त्रुटी', 'OTP पाठविताना काहीतरी समस्या आली');
-  }
-};
+  };
 
+  const handleSubmit = async () => {
+    if (!bearerToken) {
+      Alert.alert('Error', 'Authentication token missing');
+      return;
+    }
+    try {
+      setLoading(true);
 
- const handleVerifyOtp = async (mobileNumber: string, otpValue: string) => {
-  if (!otpValue || otpValue.trim().length === 0) {
-    Alert.alert('त्रुटी', 'कृपया OTP प्रविष्ट करा');
-    return;
-  }
+      // 🔥 STEP 1: get base64 here
+      const base64 = await convertToBase64();
 
-  try {
-    const response = await fetch(
-      'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/VerifyMobileOTP',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${bearerToken}`,
+      const payload = {
+        RoleId: 1,
+        UserName: profile.userName || '',
+        Village: profile.village || '',
+        PeopleGrade: parseInt(selectedPeopleGrade || '0'),
+        MobileNumber: profile.mobileNumber || '',
+        EmailId: profile.emailId || '',
+        VillagePeopleCount: parseInt(profile.villagePeopleCount || '0'),
+        FemaleCount: parseInt(profile.femalCount || '0'),
+        MaleCount: parseInt(profile.maleCount || '0'),
+        FamilyCount: parseInt(profile.familyCount || '0'),
+        VoterCount: parseInt(profile.voterCount || '0'),
+        FarmerCount: parseInt(profile.farmerCount || '0'),
+        CreatedBy: profile.userName || '',
+        LSGCode: profile.lgdCode || '',
+        Addvillage: selectedVillageIncluded, // "Yes" or "No" from dropdown
+        othervillageName: profile.othervillageName || '',
+        Transgender: parseInt(transgenderCount || '0'),
+        jsonDocumentPayload: pdfFile
+          ? [
+              {
+                FileName: pdfFile.name,
+                FileType: pdfFile.type,
+                FileSize: pdfFile.size,
+                FileContent: base64, // ✅ IMPORTANT
+                FilePath: '',
+                _fileIndex: 0,
+                Metadata: null,
+                UserId: userID.toString(),
+                RoleId: '1',
+              },
+            ]
+          : [],
+      };
+      console.log('selectedPeopleGrade', selectedPeopleGrade);
+      console.log('📤 Update Payload:', payload);
+
+      const response = await fetch(
+        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/UpdateUserProfile',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${bearerToken}`,
+          },
+          body: JSON.stringify(payload),
         },
-        body: JSON.stringify({
-          MobileNo: mobileNumber,
-          MobileOTP: otpValue,
-        }),
-      }
-    );
+      );
 
-    const json = await response.json();
-    console.log('✅ Verify OTP Response:', json);
+      // const json = await response.json();
+      // console.log('✅ Update Response:', json);
 
-    if (json.responseCode === 2000 && json.items?.length > 0) {
-      const result = json.items[0];
-      if (result.flag === 1) {
-        Alert.alert('✅ यशस्वी', 'OTP पडताळणी यशस्वी झाली!');
-        setOtpVerified(true);
-        setShowOtpVerifySection(false); // ✅ Hide verification section
-        setShowOtpButton(false); // ✅ Hide Get OTP button after success
+      // if (json.responseCode === 1001) {
+
+      //   await AsyncStorage.setItem(
+      //     'voterCount',
+      //     profile.voterCount ?? ''
+      //   );
+
+      //   await AsyncStorage.setItem(
+      //     'villagePeopleCount',
+      //     profile.villagePeopleCount ?? ''
+      //   );
+      //   await AsyncStorage.setItem(
+      //     'familyCount',
+      //     profile.familyCount ?? ''
+      //   );
+      //   await AsyncStorage.setItem(
+      //     'farmerCount',
+      //     profile.farmerCount ?? ''
+      //   );
+
+      //   console.log('🔄 AsyncStorage updated after profile submit');
+
+      //   Alert.alert('✅ यशस्वी', json.responseMessage || 'Profile updated successfully!');
+      // } else {
+      //   Alert.alert('⚠️ अयशस्वी', json.responseMessage || 'Failed to update profile');
+      // }
+
+      const json = await response.json();
+      console.log('✅ Update Response:', json);
+      console.log('TYPE:', typeof json.responseCode);
+
+      if (String(json.responseCode).trim() === '1001') {
+        await AsyncStorage.setItem('voterCount', profile.voterCount ?? '');
+        await AsyncStorage.setItem(
+          'villagePeopleCount',
+          profile.villagePeopleCount ?? '',
+        );
+        await AsyncStorage.setItem('familyCount', profile.familyCount ?? '');
+        await AsyncStorage.setItem('farmerCount', profile.farmerCount ?? '');
+
+        console.log('🔄 AsyncStorage updated after profile submit');
+
+        Alert.alert(
+          '✅ यशस्वी',
+          json.responseMessage || 'Profile updated successfully!',
+        );
       } else {
-        Alert.alert('❌ अयशस्वी', result.message);
+        console.log('❌ Failed condition, responseCode:', json.responseCode);
+        Alert.alert(
+          '⚠️ अयशस्वी',
+          json.responseMessage || 'Failed to update profile',
+        );
       }
-    } else {
-      Alert.alert('❌ अयशस्वी', json.responseMessage || 'OTP पडताळणी अयशस्वी');
+    } catch (error) {
+      console.error('❌ Update error:', error);
+      Alert.alert('Error', 'Something went wrong while updating profile');
+    } finally {
+      setLoading(false);
     }
-  } catch (error) {
-    console.error('Verify OTP Error:', error);
-    Alert.alert('त्रुटी', 'OTP पडताळताना काहीतरी समस्या आली');
-  }
-};
+  };
 
-const validateProfile = () => {
-   
-  if (!selectedPeopleGrade || selectedPeopleGrade.trim() === '') {
-    Alert.alert('त्रुटी', 'कृपया लोकांचा दर्जा निवडा');
-    return false;
-  }
-  // if (!mobileNumber || mobileNumber.trim().length !== 10) {
-  //   Alert.alert('त्रुटी', 'कृपया वैध मोबाईल नंबर प्रविष्ट करा');
-  //   return false;
-  // }
+  const handleGetOtp = async (mobileNumber: string) => {
+    if (!mobileNumber || mobileNumber.trim().length !== 10) {
+      Alert.alert('त्रुटी', 'कृपया वैध मोबाईल नंबर प्रविष्ट करा');
+      return;
+    }
 
-  // if (!otpVerified) {
-  //   Alert.alert('त्रुटी', 'कृपया ओटीपी पडताळणी करा');
-  //   return false;
-  // }
+    try {
+      const response = await fetch(
+        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/GetMobileOTPRegistration',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${bearerToken}`,
+          },
+          body: JSON.stringify({
+            MobileNumber: mobileNumber,
+          }),
+        },
+      );
 
-  if (!emailId || emailId.trim() === '') {
-    Alert.alert('त्रुटी', 'कृपया ई-मेल आयडी प्रविष्ट करा');
-    return false;
-  }
-  if (!villagePeopleCount || isNaN(Number(villagePeopleCount))) {
-    Alert.alert('त्रुटी', 'कृपया वैध लोकसंख्या प्रविष्ट करा');
-    return false;
-  }
- if (!femaleCount || isNaN(Number(femaleCount))) {
-    Alert.alert('त्रुटी', 'कृपया स्त्रियांची संख्या प्रविष्ट करा');
-    return false;
-  }
+      const json = await response.json();
+      console.log('📲 OTP Response:', json);
 
-  if (!maleCount || isNaN(Number(maleCount))) {
-    Alert.alert('त्रुटी', 'कृपया पुरुषांची संख्या प्रविष्ट करा');
-    return false;
-  }
+      if (json.responseCode === 2000 && json.items?.length > 0) {
+        const otpInfo = json.items[0];
+        Alert.alert('✅ यशस्वी', otpInfo.message || 'OTP पाठविण्यात आला आहे');
+        setOtpSent(true);
+        setShowOtpVerifySection(true); // ✅ Show OTP verify section
+      } else {
+        Alert.alert('त्रुटी', json.responseMessage || 'OTP पाठविण्यात अयशस्वी');
+      }
+    } catch (error) {
+      console.error('OTP Error:', error);
+      Alert.alert('त्रुटी', 'OTP पाठविताना काहीतरी समस्या आली');
+    }
+  };
 
-  if (!familyCount || isNaN(Number(familyCount))) {
-    Alert.alert('त्रुटी', 'कृपया कुटुंबांची संख्या प्रविष्ट करा');
-    return false;
-  }
-  if (!farmerCount || isNaN(Number(farmerCount))) {
-    Alert.alert('त्रुटी', 'कृपया शेतकऱ्यांची संख्या प्रविष्ट करा');
-    return false;
-  }
-if (!voterCount || isNaN(Number(voterCount))) {
-    Alert.alert('त्रुटी', 'कृपया मतदारांची संख्या प्रविष्ट करा');
-    return false;
-  }
+  const handleVerifyOtp = async (mobileNumber: string, otpValue: string) => {
+    if (!otpValue || otpValue.trim().length === 0) {
+      Alert.alert('त्रुटी', 'कृपया OTP प्रविष्ट करा');
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/VerifyMobileOTP',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${bearerToken}`,
+          },
+          body: JSON.stringify({
+            MobileNo: mobileNumber,
+            MobileOTP: otpValue,
+          }),
+        },
+      );
+
+      const json = await response.json();
+      console.log('✅ Verify OTP Response:', json);
+
+      if (json.responseCode === 2000 && json.items?.length > 0) {
+        const result = json.items[0];
+        if (result.flag === 1) {
+          Alert.alert('✅ यशस्वी', 'OTP पडताळणी यशस्वी झाली!');
+          setOtpVerified(true);
+          setShowOtpVerifySection(false); // ✅ Hide verification section
+          setShowOtpButton(false); // ✅ Hide Get OTP button after success
+        } else {
+          Alert.alert('❌ अयशस्वी', result.message);
+        }
+      } else {
+        Alert.alert(
+          '❌ अयशस्वी',
+          json.responseMessage || 'OTP पडताळणी अयशस्वी',
+        );
+      }
+    } catch (error) {
+      console.error('Verify OTP Error:', error);
+      Alert.alert('त्रुटी', 'OTP पडताळताना काहीतरी समस्या आली');
+    }
+  };
+
  
 
-  if (!selectedVillageIncluded || selectedVillageIncluded.trim() === '') {
-    Alert.alert('त्रुटी', 'कृपया गाव समाविष्ट आहे का ते निवडा');
-    return false;
-  }
-
-  if (!village || village.trim() === '') {
-    Alert.alert('त्रुटी', 'कृपया गावाचे नाव प्रविष्ट करा');
-    return false;
-  }
-
-  // if (!lgdCode || lgdCode.trim() === '') {
-  //   Alert.alert('त्रुटी', 'कृपया LGD कोड प्रविष्ट करा');
-  //   return false;
-  // }
-
-  if (selectedVillageIncluded === 'होय' && (!otherVillageName || otherVillageName.trim() === '')) {
-    Alert.alert('त्रुटी', 'कृपया इतर गावांची नावे प्रविष्ट करा');
-    return false;
-  }
-
-  return true; // ✅ All validations passed
-};
-
   return (
+    
     <View style={styles.container}>
-  
       {/* Scrollable Form */}
-      <ScrollView
-      contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false}
-    >
-        <View style={styles.formCard}>
 
-        <LabelValue label="जिल्हा :" value={profile.district} editable={false} />
-          <LabelValue label="तालुका :" value={profile.taluka} editable={false} />
-            <LabelValue label="गाव :" value={profile.village} editable={false} />
-              <LabelValue label="ग्रामपंचायतीचे नाव :" value={profile.gramPanchayanName} editable={false} />
-                <LabelValue label="ग्रामपंचायचा LGD कोड :" value={profile.lgdCode} editable={false} />
+      <CustomHeader title="वापरकर्ता तपशील" />
+      <ScrollView  
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.formCard}>
+          <LabelValue
+            label="जिल्हा :"
+            value={profile.district}
+            editable={false}
+          />
+          <LabelValue
+            label="तालुका :"
+            value={profile.taluka}
+            editable={false}
+          />
+          <LabelValue
+            label="गाव :"
+            value={profile.village}
+            placeholder="Enter village name"
+            editable
+            onChangeText={text => setProfile({ ...profile, village: text })}
+          />
+
+          <LabelValue
+            label="ग्रामपंचायतीचे नाव :"
+            value={profile.gramPanchayanName}
+            editable={false}
+          />
+          <LabelValue
+            label="ग्रामपंचायचा LGD कोड* :"
+            value={profile.lgdCode}
+            editable={false}
+          />
 
           <Text style={styles.fieldLabel}>लोकसंख्या श्रेणी निवडा*</Text>
 
-         <View style={styles.pickerContainer}>
-        <Picker
-          selectedValue={selectedPeopleGrade}
-          onValueChange={(itemValue) => setSelectedPeopleGrade(itemValue)} style={styles.picker}>
-          <Picker.Item label="लोकसंख्या श्रेणी निवडा" value="" />
-          {peopleGradeList.map((item) => (
-            <Picker.Item key={item.value} label={item.label} value={item.value} />
-          ))}
-          </Picker>
-        </View>
+          <View style={styles.pickerContainer}>
+            <Picker
+              selectedValue={selectedPeopleGrade}
+              onValueChange={itemValue => setSelectedPeopleGrade(itemValue)}
+              style={styles.picker}
+            >
+              <Picker.Item label="लोकसंख्या श्रेणी निवडा" value="" />
+              {peopleGradeList.map(item => (
+                <Picker.Item
+                  key={item.value}
+                  label={item.label}
+                  value={item.value}
+                />
+              ))}
+            </Picker>
+          </View>
 
-       <LabelValue
-            label="मोबाईल नंबर :"
+          <LabelValue
+            label="मोबाईल नंबर* :"
             value={profile.mobileNumber}
             placeholder="Enter mobile number"
-           editable={!otpVerified} 
-            onChangeText={(text) => {
-               const numericText = text.replace(/[^0-9]/g, '');
+            keyboardType="numeric"
+            editable={!otpVerified}
+            onChangeText={text => {
+              const numericText = text.replace(/[^0-9]/g, '');
               setProfile({ ...profile, mobileNumber: text });
 
               setOtpVerified(false);
               setShowOtpButton(true);
-               setShowOtpButton(numericText.length === 10);
+              setShowOtpButton(numericText.length === 10);
               // Show OTP button if number is newly entered or empty
               if (!text || text.trim() === '') {
                 setShowOtpButton(true);
@@ -450,159 +596,228 @@ if (!voterCount || isNaN(Number(voterCount))) {
             </Text>
           )}
 
-        {/* ✅ Only show button when mobile number is missing or newly entered */}
-       {!otpVerified && showOtpButton && profile.mobileNumber?.length === 10 && (
-          <TouchableOpacity
-            style={styles.otpButton}
-            onPress={() => handleGetOtp(profile.mobileNumber ?? '')}
-          >
-            <Text style={styles.otpButtonText}>
-              {otpSent ? 'OTP Sent ✅' : 'Get OTP'}
-            </Text>
-          </TouchableOpacity>
-        )}
+          {/* ✅ Only show button when mobile number is missing or newly entered */}
+          {!otpVerified &&
+            showOtpButton &&
+            profile.mobileNumber?.length === 10 && (
+              <TouchableOpacity
+                style={styles.otpButton}
+                onPress={() => handleGetOtp(profile.mobileNumber ?? '')}
+              >
+                <Text style={styles.otpButtonText}>
+                  {otpSent ? 'OTP Sent ✅' : 'Get OTP'}
+                </Text>
+              </TouchableOpacity>
+            )}
 
-  
+          {showOtpVerifySection && !otpVerified && (
+            <>
+              <LabelValue
+                label="ओ टी पी पडताळणी करा :"
+                value={otp}
+                placeholder="Enter OTP"
+                editable
+                onChangeText={setOtp}
+              />
 
-{showOtpVerifySection && !otpVerified && (
-  <>
-    <LabelValue
-      label="ओ टी पी पडताळणी करा :"
-      value={otp}
-      placeholder="Enter OTP"
-      editable
-      onChangeText={setOtp}
-    />
+              <TouchableOpacity
+                style={styles.otpButton}
+                onPress={() => handleVerifyOtp(profile.mobileNumber ?? '', otp)}
+              >
+                <Text style={styles.otpButtonText}>Verify OTP</Text>
+              </TouchableOpacity>
+            </>
+          )}
 
-    <TouchableOpacity
-      style={styles.otpButton}
-      onPress={() => handleVerifyOtp(profile.mobileNumber ?? '', otp)}
-    >
-      <Text style={styles.otpButtonText}>Verify OTP</Text>
-    </TouchableOpacity>
-  </>
-)}
-
-
-        <LabelValue
-          label="ईमेल आयडी*"
-          value={profile.emailId}
-          placeholder="Enter EmailID"
-          editable
-          onChangeText={(text) => setProfile({ ...profile, emailId: text })}
-        />
-         <LabelValue
-          label="गावाची लोकसंख्या*"
-          value={profile.villagePeopleCount}
-          placeholder="गावाची लोकसंख्या"
-          editable
-          onChangeText={(text) => setProfile({ ...profile, villagePeopleCount: text })}
+          <LabelValue
+            label="ईमेल आयडी*"
+            value={profile.emailId}
+            placeholder="Enter EmailID"
+            editable
+            onChangeText={text => setProfile({ ...profile, emailId: text })}
           />
-      
-
-        <LabelValue
-          label="महिला लोकसंख्या*"
-          value={profile.femalCount}
-          placeholder="महिला लोकसंख्या"
-          editable
-          onChangeText={(text) => {
-            const female = Number(text);
-            const total = Number(profile.villagePeopleCount);
-
-            if (female > total) {
-              Alert.alert("त्रुटी", "महिला लोकसंख्या एकूण लोकसंख्येपेक्षा जास्त असू शकत नाही");
-              return;
+          <LabelValue1
+            label="गावाची लोकसंख्या*"
+            value={profile.villagePeopleCount}
+            placeholder="गावाची लोकसंख्या"
+            keyboardType="numeric"
+            editable
+            infoMessage="ग्रामपंचायत अंतर्गत लोकसंख्या बाबत दि.31 मार्च 2025 ची माहीती आरोग्य (उपकेंद्र) विभाग कडून घेऊन पोर्टल वर भरावी..."
+            showInfo
+            onChangeText={text =>
+              setProfile({ ...profile, villagePeopleCount: text })
             }
-            setProfile({ ...profile, femalCount: text });
-          }}
-        />
+          />
 
           <LabelValue
-          label="पुरुष लोकसंख्या*"
-          value={profile.maleCount}
-          placeholder="पुरुष लोकसंख्या"
-          editable
-         onChangeText={(text) => {
-            const male = Number(text);
-            const total = Number(profile.villagePeopleCount);
+            label="महिला लोकसंख्या*"
+            value={profile.femalCount}
+            placeholder="महिला लोकसंख्या"
+            keyboardType="numeric"
+            editable
+            onChangeText={text => {
+              const female = Number(text);
+              const total = Number(profile.villagePeopleCount);
 
-            if (male > total) {
-              Alert.alert("त्रुटी", "पुरुष लोकसंख्या एकूण लोकसंख्येपेक्षा जास्त असू शकत नाही");
-              return;
-            }
-            setProfile({ ...profile, maleCount: text });
-          }}
-        />
-
-          <LabelValue
-          label="कुटुंब संख्या*"
-          value={profile.familyCount}
-          placeholder="कुटुंब संख्या"
-          editable
-        onChangeText={(text) => {
-            const family = Number(text);
-            const total = Number(profile.villagePeopleCount);
-
-            if (family > total) {
-              Alert.alert("त्रुटी", "कुटुंब लोकसंख्या एकूण लोकसंख्येपेक्षा जास्त असू शकत नाही");
-              return;
-            }
-            setProfile({ ...profile, familyCount: text });
-          }}
-        />
-
-
+              if (female > total) {
+                Alert.alert(
+                  'त्रुटी',
+                  'महिला लोकसंख्या एकूण लोकसंख्येपेक्षा जास्त असू शकत नाही',
+                );
+                return;
+              }
+              setProfile({ ...profile, femalCount: text });
+            }}
+          />
 
           <LabelValue
-          label="शेतकरी संख्या*"
-          value={profile.farmerCount}
-          placeholder="शेतकरी संख्या"
-          editable
-          onChangeText={(text) => {
-            const farmer = Number(text);
-            const total = Number(profile.villagePeopleCount);
+            label="पुरुष लोकसंख्या*"
+            value={profile.maleCount}
+            keyboardType="numeric"
+            placeholder="पुरुष लोकसंख्या"
+            editable
+            onChangeText={text => {
+              const male = Number(text);
+              const total = Number(profile.villagePeopleCount);
 
-            if (farmer > total) {
-              Alert.alert("त्रुटी", "शेतकरी लोकसंख्या एकूण लोकसंख्येपेक्षा जास्त असू शकत नाही");
-              return;
-            }
-            setProfile({ ...profile, farmerCount: text });
-          }}
-        />
+              if (male > total) {
+                Alert.alert(
+                  'त्रुटी',
+                  'पुरुष लोकसंख्या एकूण लोकसंख्येपेक्षा जास्त असू शकत नाही',
+                );
+                return;
+              }
+              setProfile({ ...profile, maleCount: text });
+            }}
+          />
 
           <LabelValue
-          label="मतदारांची लोकसंख्या*"
-          value={profile.voterCount}
-          placeholder="मतदारांची लोकसंख्या"
-          editable
-          onChangeText={(text) => {
-            const voter = Number(text);
-            const total = Number(profile.villagePeopleCount);
+            label="तृतीयपंथी संख्या*"
+            keyboardType="numeric"
+            value={transgenderCount}
+            placeholder="तृतीयपंथी संख्या"
+            editable
+            onChangeText={text => setTransgenderCount(text)}
+          />
 
-            if (voter > total) {
-              Alert.alert("त्रुटी", "मतदारांची लोकसंख्या एकूण लोकसंख्येपेक्षा जास्त असू शकत नाही");
-              return;
-            }
-            setProfile({ ...profile, voterCount: text });
-          }}
-        />
+          <LabelValue
+            label="कुटुंब संख्या*"
+            keyboardType="numeric"
+            value={profile.familyCount}
+            placeholder="कुटुंब संख्या"
+            editable
+            onChangeText={text => {
+              const family = Number(text);
+              const total = Number(profile.villagePeopleCount);
 
+              if (family > total) {
+                Alert.alert(
+                  'त्रुटी',
+                  'कुटुंब लोकसंख्या एकूण लोकसंख्येपेक्षा जास्त असू शकत नाही',
+                );
+                return;
+              }
+              setProfile({ ...profile, familyCount: text });
+            }}
+            
+          />
 
-                  <Text style={styles.fieldLabel}>ग्रामपंचायतीमध्ये अन्य गावे समाविष्ट आहेत का?*</Text>
-                  <View style={styles.pickerContainer}>
-          <Picker
-            selectedValue={selectedVillageIncluded}
-            onValueChange={(itemValue) => setSelectedVillageIncluded(itemValue)}
-            style={styles.picker}
-          >
-            <Picker.Item label="कृपया निवडा" value={profile.addvillage} />
-            <Picker.Item label="होय" value="होय" />
-            <Picker.Item label="नाही" value="नाही" />
-          </Picker>
+          <LabelValue
+            label="शेतकरी संख्या*"
+            keyboardType="numeric"
+            value={profile.farmerCount}
+            placeholder="शेतकरी संख्या"
+            editable
+            onChangeText={text => {
+              const farmer = Number(text);
+              const total = Number(profile.villagePeopleCount);
 
-        </View>
+              if (farmer > total) {
+                Alert.alert(
+                  'त्रुटी',
+                  'शेतकरी लोकसंख्या एकूण लोकसंख्येपेक्षा जास्त असू शकत नाही',
+                );
+                return;
+              }
+              setProfile({ ...profile, farmerCount: text });
+            }}
+          />
 
-        {/* <LabelValue
+          <LabelValue
+            label="मतदारांची लोकसंख्या*"
+            value={profile.voterCount}
+            keyboardType="numeric"
+            placeholder="मतदारांची लोकसंख्या"
+            editable
+            onChangeText={text => {
+              const voter = Number(text);
+              const total = Number(profile.villagePeopleCount);
+
+              if (voter > total) {
+                Alert.alert(
+                  'त्रुटी',
+                  'मतदारांची लोकसंख्या एकूण लोकसंख्येपेक्षा जास्त असू शकत नाही',
+                );
+                return;
+              }
+              setProfile({ ...profile, voterCount: text });
+            }}
+          />
+
+          <Text style={styles.fieldLabel}>
+            ग्रामपंचायतीमध्ये अन्य गावे समाविष्ट आहेत का?*
+          </Text>
+          <View style={styles.pickerContainer}>
+            <Picker
+              selectedValue={selectedVillageIncluded}
+              onValueChange={itemValue => setSelectedVillageIncluded(itemValue)}
+              style={styles.picker}
+            >
+             
+              <Picker.Item label="कृपया निवडा" value={profile.addvillage} />
+              <Picker.Item label="होय" value="होय" />
+              <Picker.Item label="नाही" value="नाही" />
+            </Picker>
+          </View>
+
+          {/* ✅ Show this field only when user selects "होय" */}
+          {selectedVillageIncluded === 'होय' && (
+            <LabelValue
+              label="असल्यास, कृपया गावांची नावे लिहा*"
+              value={profile.othervillageName}
+              placeholder="गावांची नावे"
+              editable
+              onChangeText={text =>
+                setProfile({ ...profile, othervillageName: text })
+              }
+            />
+          )}
+
+          <Text style={styles.fieldLabel}>
+            लोकसंख्येबाबतची माहिती – आरोग्य विभागाचे प्रमाणपत्र (प्रत) अपलोड करा
+            *
+          </Text>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <TouchableOpacity style={styles.uploadBtn} onPress={pickPdf}>
+              <Text style={styles.uploadBtnText}>Choose File</Text>
+            </TouchableOpacity>
+
+            {(pdfFile || pdfUrl) && (
+              <View style={{ marginLeft: 15 }}>
+                <TouchableOpacity onPress={() => setShowPdf(true)}>
+                  <MaterialIcons name="picture-as-pdf" size={30} color="red" />
+                </TouchableOpacity>
+
+                {/* ✅ File name */}
+                <Text style={{ fontSize: 12, marginTop: 4 }}>
+                  {pdfFile?.name || 'View uploaded file'}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* <LabelValue
           label="असल्यास, कृपया गावांची नावे लिहा*"
           value={profile.othervillageName}
           placeholder="ABCD"
@@ -610,26 +825,35 @@ if (!voterCount || isNaN(Number(voterCount))) {
           onChangeText={(text) => setProfile({ ...profile, othervillageName: text })}
           /> */}
 
-          {/* ✅ Show this field only when user selects "होय" */}
-{selectedVillageIncluded === "होय" && (
-  <LabelValue
-    label="असल्यास, कृपया गावांची नावे लिहा*"
-    value={profile.othervillageName}
-    placeholder="गावांची नावे"
-    editable
-    onChangeText={(text) =>
-      setProfile({ ...profile, othervillageName: text })
-    }
-  />
-)}
-
           <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
             <Text style={styles.submitText}>सादर करा</Text>
           </TouchableOpacity>
-
-
         </View>
       </ScrollView>
+      <Modal visible={showPdf} animationType="slide">
+        <View style={{ flex: 1 }}>
+          {/* Close button */}
+          <TouchableOpacity
+            onPress={() => setShowPdf(false)}
+            style={{
+              padding: 15,
+              backgroundColor: '#0B4FA3',
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 16 }}>Close PDF</Text>
+          </TouchableOpacity>
+
+          {/* PDF Viewer */}
+          {(pdfFile || pdfUrl) && (
+            <Pdf
+              source={{
+                uri: pdfFile?.fileCopyUri || pdfUrl,
+              }}
+              style={{ flex: 1 }}
+            />
+          )}
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -641,12 +865,14 @@ const LabelValue = ({
   value,
   placeholder,
   editable,
+  keyboardType = 'default',
   onChangeText,
 }: {
   label: string;
   value?: string;
   placeholder?: string;
   editable?: boolean;
+  keyboardType ?: 'default' | 'numeric' | 'email-address' | 'phone-pad',
   onChangeText?: (text: string) => void;
 }) => (
   <View style={{ marginVertical: 6 }}>
@@ -657,6 +883,61 @@ const LabelValue = ({
       placeholder={placeholder}
       editable={editable}
       onChangeText={onChangeText}
+      keyboardType={keyboardType}
+      placeholderTextColor="#999"
+    />
+  </View>
+);
+
+
+const LabelValue1 = ({
+  label,
+  value,
+  placeholder,
+  editable,
+  keyboardType = 'default',
+  onChangeText,
+  showInfo = false,
+  infoMessage = '',
+}: {
+  label: string;
+  value?: string;
+  placeholder?: string;
+  editable?: boolean;
+  keyboardType?: 'default' | 'numeric' | 'email-address' | 'phone-pad';
+  onChangeText?: (text: string) => void;
+  showInfo?: boolean;
+  infoMessage?: string;
+}) => (
+  <View style={{ marginVertical: 6 }}>
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        //marginBottom: 4,
+      }}>
+      <Text style={styles.label}>{label}</Text>
+
+      {showInfo && (
+        <TouchableOpacity
+          onPress={() => Alert.alert('माहिती', infoMessage)}
+          style={{ marginLeft: 5 ,marginBottom: 5}}>
+          <Ionicons
+            name="information-circle"
+            size={22}
+            color="#2F80ED"
+          />
+        </TouchableOpacity>
+      )}
+    </View>
+
+    <TextInput
+      style={[styles.input, !editable && { backgroundColor: '#f3f4f6' }]}
+      value={value || ''}
+      placeholder={placeholder}
+      editable={editable}
+      onChangeText={onChangeText}
+      keyboardType={keyboardType}
       placeholderTextColor="#999"
     />
   </View>
@@ -665,47 +946,20 @@ const LabelValue = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#004A99',
+   // backgroundColor: '#E8EEF3',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    marginTop: 30,
-  },
-  headerTitle: {
+  toolbarTitle: {
     color: '#fff',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
-    marginLeft: 16,
+    marginLeft: 15,
   },
-  toolbar: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  backgroundColor: '#004A99',
-  paddingVertical: 14,
-  paddingHorizontal: 16,
-  elevation: 5,
-  borderBottomWidth: 1,
-  borderBottomColor: '#003B7A',
-  marginTop: 35,
-  zIndex: 10,
-},
-menuButton: {
-  padding: 5,
-},
-toolbarTitle: {
-  color: '#fff',
-  fontSize: 18,
-  fontWeight: '700',
-  marginLeft: 15,
-},
- scrollContent: {
-  flexGrow: 1,
-  backgroundColor: '#004A99',
-  padding: 16,
-  paddingTop: 8,
-},
+  scrollContent: {
+    flexGrow: 1,
+    backgroundColor: '#E8EEF3',
+    padding: 16,
+    //paddingTop: 8,
+  },
   formCard: {
     backgroundColor: '#fff',
     borderRadius: 20,
@@ -747,7 +1001,7 @@ toolbarTitle: {
     fontWeight: 'bold',
     fontSize: 16,
   },
-   pickerContainer: {
+  pickerContainer: {
     borderWidth: 1,
     borderColor: '#dcdcdc',
     borderRadius: 8,
@@ -759,25 +1013,37 @@ toolbarTitle: {
     alignItems: 'center',
   },
   picker: {
-  height: 50,
-  width: '100%',
-  color: '#333',
-},
-otpButton: {
-  backgroundColor: '#007bff',
-  paddingVertical: 10,
-  borderRadius: 8,
-  alignItems: 'center',
-  marginTop: 10,
-},
-otpButtonText: {
-  color: '#fff',
-  fontSize: 16,
-  fontWeight: 'bold',
-},
-
+    height: 50,
+    width: '100%',
+    color: '#333',
+  },
+  otpButton: {
+    backgroundColor: '#007bff',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  otpButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  uploadBtn: {
+    backgroundColor: '#0A8754',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+  },
+  uploadBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
 });
 function setPeopleGradeList(dropdownData: any) {
   throw new Error('Function not implemented.');
 }
-

@@ -1,3 +1,7 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-shadow */
+/* eslint-disable react-native/no-inline-styles */
+/* eslint-disable react/no-unstable-nested-components */
 import React from 'react';
 import { View, Text, TouchableOpacity, Image } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -8,6 +12,14 @@ import DashboardScreen from '../screens/DashboardScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import Mul_Prashnavali from '../screens/Mul_Prashnavali';
 import FormScreen from '../screens/FormScreen';
+
+export type BottomTabParamList = {
+  DashboardTab: undefined;
+  FormTab: undefined;
+  MulPrashnavaliTab: undefined;
+  ProfileTab: undefined;
+};
+
 
 const Tab = createBottomTabNavigator();
 
@@ -22,6 +34,9 @@ const BottomTabs = ({ route }: any) => {
 
   const [currentTab, setCurrentTab] = React.useState('DashboardTab');
 
+
+
+  
   const getHeaderTitle = (): string => {
     switch (currentTab) {
       case 'DashboardTab':
@@ -65,7 +80,7 @@ const BottomTabs = ({ route }: any) => {
 
   return (
     <>
-      <HeaderBar />
+      {/* <HeaderBar /> */}
 
       <Tab.Navigator
         screenListeners={{

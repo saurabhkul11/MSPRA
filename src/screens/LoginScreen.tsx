@@ -1,3 +1,5 @@
+/* eslint-disable react-native/no-inline-styles */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useState } from 'react';
 import {
   View,
@@ -20,10 +22,12 @@ import { RootStackParamList } from '../navigation/AppNavigator';
 import Icon from 'react-native-vector-icons/Feather';
 
 import { useAuth } from '../context/AuthContext'; // ✅ ADD CONTEXT
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-
-type LoginScreenNavigationProp =
-  NativeStackNavigationProp<RootStackParamList, 'Login'>;
+type LoginScreenNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'Login'
+>;
 
 const LoginScreen = () => {
   const [username, setUsername] = useState('');
@@ -56,30 +60,48 @@ const LoginScreen = () => {
         {
           headers: { 'Content-Type': 'application/json' },
           timeout: 15000,
-        }
+        },
       );
 
-     if (response.data?.responseCode === 2000) {
-  const user = response.data.items[0];
+      if (response.data?.responseCode === 2000) {
+        const user = response.data.items[0];
+        if (String(user.isProfileComplete) !== '1') {
+          Alert.alert(
+            'सूचना',
+            'मुख्यमंत्री समृद्ध पंचायतराज अभियान माहिती वर्ष २०२५-२६ अंतर्गत आपली ग्रामपंचायत २०% सहभागीं ग्रामपंचायतीमध्ये समाविष्ट नाही. त्यामुळे या वर्षासाठी आपण पोर्टलवर माहिती भरण्याची आवश्यकता नाही.',
+            [{ text: 'OK' }],
+          );
 
- login(user.userID, user.bearerToken, username.trim());
+          setLoading(false);
+          return; // Stop here, no login, no navigation
+        }
+
+        const isBDO = username.trim() === '4410';
+
+        await AsyncStorage.setItem(
+          'isBDO',
+          isBDO ? 'true' : 'false',
+        );
+
+        login(
+          user.userID,
+          user.bearerToken,
+          username.trim(),
+          user.isProfileComplete,
+        );
 
 
-  navigation.reset({
-    index: 0,
-    routes: [{ name: "Home" }],
-  });
-}
-      
-      
-      else {
+        console.log('isProfileComplete', user.isProfileComplete);
+      }
+       else {
         Alert.alert(
           '❌ अयशस्वी',
           response.data?.responseMessage ||
-            'वापरकर्त्याचे नाव किंवा पासवर्ड चुकीचा आहे'
+            'वापरकर्त्याचे नाव किंवा पासवर्ड चुकीचा आहे',
         );
       }
     } catch (error) {
+    //  console.error('Login error:', error);
       Alert.alert('त्रुटी', 'सर्व्हरशी संपर्क साधण्यात अडचण आली');
     } finally {
       setLoading(false);
@@ -88,11 +110,12 @@ const LoginScreen = () => {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{ flex: 1 }}
     >
       <ScrollView
         contentContainerStyle={{ flexGrow: 1 }}
+        //style={{flex:1}}
         keyboardShouldPersistTaps="handled"
       >
         <ImageBackground
@@ -156,29 +179,13 @@ const LoginScreen = () => {
                   <Text style={styles.rememberText}>माझी आठवण ठेवा</Text>
                 </TouchableOpacity>
 
-                {/* <TouchableOpacity
-                  onPress={() => {
-                    if (userID && token) {
-                      navigation.navigate('ForgotPassword', {
-                        userID,
-                        bearerToken: token,
-                      });
-                    } else {
-                      Alert.alert('त्रुटी', 'कृपया प्रथम लॉगिन करा');
-                    }
-                  }}
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('ForgotPassword')}
+
+                  //onPress={() => navigation.navigate('BDODashboard')}
                 >
                   <Text style={styles.forgotText}>पासवर्ड विसरलात?</Text>
-                </TouchableOpacity> */}
-
-<TouchableOpacity
-  onPress={() => navigation.navigate('ForgotPassword')}
->
-  <Text style={styles.forgotText}>पासवर्ड विसरलात?</Text>
-</TouchableOpacity>
-
-
-
+                </TouchableOpacity>
               </View>
 
               {/* Login Button */}
@@ -193,14 +200,6 @@ const LoginScreen = () => {
                   <Text style={styles.loginText}>लॉगिन करा</Text>
                 )}
               </TouchableOpacity>
-
-              {/* Signup */}
-              {/* <View style={styles.signupContainer}>
-                <Text style={styles.signupText}>खाते नाहीये का? </Text>
-                <TouchableOpacity>
-                  <Text style={styles.signupLink}>खाते तयार करा</Text>
-                </TouchableOpacity>
-              </View> */}
             </View>
           </View>
         </ImageBackground>
@@ -208,7 +207,6 @@ const LoginScreen = () => {
     </KeyboardAvoidingView>
   );
 };
-
 
 const styles = StyleSheet.create({
   bg: { flex: 1 },
@@ -294,4 +292,3 @@ const styles = StyleSheet.create({
 });
 
 export default LoginScreen;
-

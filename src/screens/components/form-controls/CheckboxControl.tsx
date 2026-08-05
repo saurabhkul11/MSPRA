@@ -1,5 +1,6 @@
+/* eslint-disable react-native/no-inline-styles */
 import React from "react";
-import { View, Text, TouchableOpacity } from "react-native";
+import {Text, TouchableOpacity } from "react-native";
 
 type Props = {
   label: string;
