@@ -1,7 +1,7 @@
 // src/utils/api.ts
 import axios from "axios";
 
-const API_BASE_URL = "https://CMSPRajAbhiyanAPI.mahaitgov.in/api";
+export const API_BASE_URL = "https://CMSPRajAbhiyanAPI.mahaitgov.in/api";
 
 export const loginUser = async (username: string, passwordHash: string) => {
   try {

@@ -23,6 +23,8 @@ import Icon from 'react-native-vector-icons/Feather';
 
 import { useAuth } from '../context/AuthContext'; // ✅ ADD CONTEXT
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import CustomAlert, { AlertType } from '../utils/CustomAlert';
+import {API_BASE_URL} from '../utils/api';
 
 type LoginScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -39,15 +41,34 @@ const LoginScreen = () => {
   const navigation = useNavigation<LoginScreenNavigationProp>();
   const { login, userID, token } = useAuth(); // ✅ CONTEXT
 
+   const [alertVisible, setAlertVisible] = useState(false);
+    const [alertType, setAlertType] = useState<AlertType>('info');
+    const [alertTitle, setAlertTitle] = useState('');
+    const [alertMessage, setAlertMessage] = useState('');
+  
+    const showCustomAlert = (
+      type: AlertType,
+      message: string,
+      title?: string,
+    ) => {
+      setAlertType(type);
+      setAlertTitle(title || '');
+      setAlertMessage(message);
+      setAlertVisible(true);
+    };
+
   const handleLogin = async () => {
     if (!username.trim() || !password.trim()) {
       Alert.alert('त्रुटी', 'कृपया वापरकर्त्याचे नाव आणि पासवर्ड टाका');
+
+     //showCustomAlert('error','कृपया वापरकर्त्याचे नाव आणि पासवर्ड टाका')
       return;
     }
 
     setLoading(true);
 
-    const apiUrl = 'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/Login';
+    //const apiUrl = 'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/Login';
+    const apiUrl = `${API_BASE_URL}/User/Login`;
     const passwordHash = MD5(password).toString().toUpperCase();
 
     try {
@@ -62,26 +83,47 @@ const LoginScreen = () => {
           timeout: 15000,
         },
       );
+      console.log('Login response:', response.data);
 
       if (response.data?.responseCode === 2000) {
         const user = response.data.items[0];
+
+        const isBDO = user.roleId === '3';
+        const isCEO = user.roleId === '4';
+        const isDIV = user.roleId === '6';
+        const isSTA = user.roleId === '8';
+
+        await AsyncStorage.setItem('username', username.trim());
+
+        await AsyncStorage.setItem(
+          'isBDO',
+          isBDO ? 'true' : 'false',
+        );
+        await AsyncStorage.setItem(
+          'isCEO',
+          isCEO ? 'true' : 'false',
+        );
+         await AsyncStorage.setItem(
+          'isDIV',
+          isDIV ? 'true' : 'false',
+        );
+         await AsyncStorage.setItem(
+          'isSTA',
+          isSTA ? 'true' : 'false',
+        );
         if (String(user.isProfileComplete) !== '1') {
+
           Alert.alert(
             'सूचना',
             'मुख्यमंत्री समृद्ध पंचायतराज अभियान माहिती वर्ष २०२५-२६ अंतर्गत आपली ग्रामपंचायत २०% सहभागीं ग्रामपंचायतीमध्ये समाविष्ट नाही. त्यामुळे या वर्षासाठी आपण पोर्टलवर माहिती भरण्याची आवश्यकता नाही.',
             [{ text: 'OK' }],
           );
 
+          //showCustomAlert('info','मुख्यमंत्री समृद्ध पंचायतराज अभियान माहिती वर्ष २०२५-२६ अंतर्गत आपली ग्रामपंचायत २०% सहभागीं ग्रामपंचायतीमध्ये समाविष्ट नाही. त्यामुळे या वर्षासाठी आपण पोर्टलवर माहिती भरण्याची आवश्यकता नाही.')
+
           setLoading(false);
           return; // Stop here, no login, no navigation
         }
-
-        const isBDO = username.trim() === '4410';
-
-        await AsyncStorage.setItem(
-          'isBDO',
-          isBDO ? 'true' : 'false',
-        );
 
         login(
           user.userID,
@@ -99,10 +141,15 @@ const LoginScreen = () => {
           response.data?.responseMessage ||
             'वापरकर्त्याचे नाव किंवा पासवर्ड चुकीचा आहे',
         );
+
+        // showCustomAlert('error',response.data?.responseMessage ||
+        //     'वापरकर्त्याचे नाव किंवा पासवर्ड चुकीचा आहे')
       }
     } catch (error) {
     //  console.error('Login error:', error);
       Alert.alert('त्रुटी', 'सर्व्हरशी संपर्क साधण्यात अडचण आली');
+
+      //showCustomAlert('error','सर्व्हरशी संपर्क साधण्यात अडचण आली')
     } finally {
       setLoading(false);
     }
@@ -204,6 +251,14 @@ const LoginScreen = () => {
           </View>
         </ImageBackground>
       </ScrollView>
+
+       <CustomAlert
+          visible={alertVisible}
+          type={alertType}
+          title={alertTitle}
+          message={alertMessage}
+          onClose={() => setAlertVisible(false)}
+        />
     </KeyboardAvoidingView>
   );
 };

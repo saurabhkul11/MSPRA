@@ -21,9 +21,6 @@ import Form6 from "../screens/Form6";
 import Form7 from "../screens/Form7";
 import Form8 from "../screens/Form8";
 import { useAuth } from "../context/AuthContext"; // ✅ ADD
- import BDODashboard from "../screens/BDODashboard";
-import StageForm1 from "../screens/StageForm1";
-import StageForm2 from "../screens/StageForm2";
 import BDODrawerNavigator from "./BDODrawerNavigator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { View, ActivityIndicator } from "react-native";
@@ -36,12 +33,14 @@ import GPMarksReportScreen from "../screens/GPMarksReportScreen";
 import WeeklyVisitReportScreen from "../screens/WeeklyVisitReportScreen";
 import WeekReportScreen from "../screens/WeekReportScreen";
 import NewsFieldScreen from "../screens/NewsFieldScreen";
-import StageForm3 from "../screens/StageForm3";
-import StageForm4 from "../screens/StageForm4";
-import StageForm5 from "../screens/StageForm5";
-import StageForm6 from "../screens/StageForm6";
-import StageForm7 from "../screens/StageForm7";
-import StageForm8 from "../screens/StageForm8";
+import BDOPreviewScreen from "../screens/BDOPreviewScreen";
+import BDOForm from "../screens/BDOForm";
+import CEOPreviewScreen from "../screens/CEOPreviewScreen";
+import CEOForm from "../screens/CEOForm";
+import DivisionForm from "../screens/DivisionForm";
+import DivPreviewScreen from "../screens/DivPreviewScreen";
+import StateForm from "../screens/StateForm";
+import StatePreviewScreen from "../screens/StatePreviewScreen";
 
 export type RootStackParamList = {
   Splash: undefined;
@@ -63,14 +62,7 @@ export type RootStackParamList = {
   BDODashboard: undefined;
   BDODashboardHome:undefined;
   FormLayout: { formNo: number };
-  StageForm1 : undefined
-  StageForm2:undefined
-  StageForm3: undefined
-  StageForm4: undefined
-  StageForm5: undefined
-  StageForm6: undefined
-  StageForm7: undefined
-  StageForm8: undefined
+  BDOForm : undefined
   BDOHome: { userID: string; bearerToken: string };
   ChangePasswordScreen: undefined;
   GrampanchayatReportScreen: undefined;
@@ -80,6 +72,14 @@ export type RootStackParamList = {
   WeeklyVisitReportScreen: undefined;
   WeekReportScreen: undefined;
   NewsFieldScreen: undefined;
+  BDOPreviewScreen: undefined;
+  CEOPreviewScreen :undefined
+  CEOForm: undefined;
+  DivisionForm:undefined
+  DivPreviewScreen:undefined
+  StateForm:undefined
+  StatePreviewScreen:undefined
+
 
 };
 
@@ -87,23 +87,39 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const AppNavigator = () => {
   const { loading, token, userID } = useAuth();
-const [isBDO, setIsBDO] = useState<boolean | null>(null);
+  const [isBDO, setIsBDO] = useState<boolean | null>(null);
+  const [isCEO, setIsCEO] = useState<boolean | null>(null);
+  const [isDIV, setIsDIV] = useState<boolean | null>(null);
+  const [isSTA, setIsSTA] = useState<boolean | null>(null);
+
   const [loadingRole, setLoadingRole] = useState(true);
 
 useEffect(() => {
   const loadBDOFlag = async () => {
     if (!token) {
       setIsBDO(null);
+      setIsCEO(null);
+      setIsDIV(null);
+      setIsSTA(null);
       return;
     }
 
     try {
       const storedBDO = await AsyncStorage.getItem('isBDO');
+      const storedCEO = await AsyncStorage.getItem('isCEO');
+      const storedDIV = await AsyncStorage.getItem('isDIV');
+      const storedSTA = await AsyncStorage.getItem('isSTA');
 
       setIsBDO(storedBDO === 'true');
+      setIsCEO(storedCEO === 'true');
+      setIsDIV(storedDIV === 'true');
+      setIsSTA(storedSTA === 'true');
     } catch (error) {
       console.log('Error getting BDO flag:', error);
       setIsBDO(false);
+      setIsCEO(false);
+      setIsDIV(false);
+      setIsSTA(false);
     }
   };
 
@@ -115,7 +131,7 @@ useEffect(() => {
     return <SplashScreen />;
   }
 
-  if (token && isBDO === null) {
+  if (token && isBDO   === null) {
   return (
     <View
       style={{
@@ -189,7 +205,7 @@ useEffect(() => {
             component={ResetPassword}
           />
         </>
-      ) : isBDO  ? (
+      ) : isBDO || isCEO || isDIV  || isSTA? (
         <>
           {/* BDO USER */}
 
@@ -213,43 +229,20 @@ useEffect(() => {
           />
 
           <Stack.Screen
-            name="StageForm1"
-            component={StageForm1}
+            name="BDOForm"
+            component={BDOForm}
           />
 
           <Stack.Screen
-            name="StageForm2"
-            component={StageForm2}
+            name="BDOPreviewScreen"
+            component={BDOPreviewScreen}
           />
 
           <Stack.Screen
-            name="StageForm3"
-            component={StageForm3}
-          />
-          <Stack.Screen
-            name="StageForm4"
-            component={StageForm4}
-          />
-          <Stack.Screen
-            name="StageForm5"
-            component={StageForm5}
-          />
-          <Stack.Screen
-            name="StageForm6"
-            component={StageForm6}
-          />
-          <Stack.Screen
-            name="StageForm7"
-            component={StageForm7}
-          />
-           <Stack.Screen
-            name="StageForm8"
-            component={StageForm8}
+            name="CEOPreviewScreen"
+            component = {CEOPreviewScreen}
           />
           
-
-          
-
           <Stack.Screen
             name="GrampanchayatReportScreen"
             component={GrampanchayatReportScreen}
@@ -275,6 +268,37 @@ useEffect(() => {
           <Stack.Screen
             name="WeekReportScreen"
             component={WeekReportScreen}
+          />
+
+          <Stack.Screen
+            name="NewsFieldScreen"
+            component={NewsFieldScreen}
+          />
+
+          
+           <Stack.Screen
+            name="CEOForm"
+            component={CEOForm}
+          />
+
+          <Stack.Screen
+            name="DivisionForm"
+            component={DivisionForm}
+          />
+
+           <Stack.Screen
+            name="DivPreviewScreen"
+            component={DivPreviewScreen}
+          />
+
+          <Stack.Screen
+            name="StateForm"
+            component={StateForm}
+          />
+
+           <Stack.Screen
+            name="StatePreviewScreen"
+            component={StatePreviewScreen}
           />
 
         </>

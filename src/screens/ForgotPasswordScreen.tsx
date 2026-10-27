@@ -15,6 +15,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import axios from 'axios';
+import {API_BASE_URL} from '../utils/api';
 
 const ForgotPasswordScreen = ({ navigation }: any) => {
   const [username, setUsername] = useState('');
@@ -34,11 +35,13 @@ const ForgotPasswordScreen = ({ navigation }: any) => {
 
     setLoading(true);
     try {
-      const apiUrl =
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/GetForgotPasswordMobileOTP';
+
+      const url = `${API_BASE_URL}/User/GetForgotPasswordMobileOTP`;
+      // const apiUrl =
+      //   'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/GetForgotPasswordMobileOTP';
 
       const response = await axios.post(
-        apiUrl,
+        url,
         { UserName: username.trim() },
         { headers: { 'Content-Type': 'application/json' } },
       );
@@ -80,11 +83,13 @@ const ForgotPasswordScreen = ({ navigation }: any) => {
 
     setLoading(true);
     try {
-      const apiUrl =
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/VerifyMobileOTP';
+
+      const url = `${API_BASE_URL}/User/VerifyMobileOTP`;
+      // const apiUrl =
+      //   'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/VerifyMobileOTP';
 
       const response = await axios.post(
-        apiUrl,
+        url,
         {
           MobileNo: mobileNumber,
           MobileOTP: otp.trim(),

@@ -33,6 +33,7 @@ import { PermissionsAndroid, Platform } from 'react-native';
 import RNFS from 'react-native-fs';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import CustomHeader from '../utils/CustomHeader';
+import {API_BASE_URL} from '../utils/api';
 
 interface ProfileData {
   userName?: string;
@@ -116,8 +117,11 @@ const ProfileScreen = ({ route }: any) => {
 
   const fetchDropdownList = async () => {
     try {
+
+      const url = `${API_BASE_URL}/User/GetCommonDDList`;
+
       const response = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/GetCommonDDList',
+        url,
         {
           method: 'POST',
           headers: {
@@ -163,8 +167,10 @@ const ProfileScreen = ({ route }: any) => {
 
   const fetchProfile = async () => {
     try {
+      const url = `${API_BASE_URL}/User/GetUserProfile`;
+
       const response = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/GetUserProfile',
+        url,
         {
           method: 'POST',
           headers: {
@@ -242,14 +248,6 @@ const ProfileScreen = ({ route }: any) => {
     }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={{ marginTop: 10 }}>Loading Profile...</Text>
-      </View>
-    );
-  }
 
   const pickPdf = async () => {
     try {
@@ -346,8 +344,10 @@ const ProfileScreen = ({ route }: any) => {
       console.log('selectedPeopleGrade', selectedPeopleGrade);
       console.log('📤 Update Payload:', payload);
 
+      const url = `${API_BASE_URL}/User/UpdateUserProfile`;
+
       const response = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/UpdateUserProfile',
+        url,
         {
           method: 'POST',
           headers: {
@@ -429,8 +429,10 @@ const ProfileScreen = ({ route }: any) => {
     }
 
     try {
+      const url = `${API_BASE_URL}/User/GetMobileOTPRegistration`;
+
       const response = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/GetMobileOTPRegistration',
+        url,
         {
           method: 'POST',
           headers: {
@@ -467,8 +469,11 @@ const ProfileScreen = ({ route }: any) => {
     }
 
     try {
+
+      const url = `${API_BASE_URL}/User/VerifyMobileOTP`;
+
       const response = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/User/VerifyMobileOTP',
+        url,
         {
           method: 'POST',
           headers: {
@@ -854,6 +859,21 @@ const ProfileScreen = ({ route }: any) => {
           )}
         </View>
       </Modal>
+
+      {loading && (
+            <View style={styles.loaderOverlay}>
+              <View style={styles.loaderCard}>
+                <ActivityIndicator
+                  size="large"
+                  color="#0B63B6"
+                />
+      
+                <Text style={styles.loaderText}>
+                  Loading...
+                </Text>
+              </View>
+            </View>
+          )}
     </View>
   );
 };
@@ -944,6 +964,31 @@ const LabelValue1 = ({
 );
 
 const styles = StyleSheet.create({
+
+    loaderOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: 'rgba(24,36,30,0.42)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 999,
+    },
+  
+    loaderCard: {
+      width: 135,
+      minHeight: 115,
+      borderRadius: 17,
+      backgroundColor: '#FFFFFF',
+      alignItems: 'center',
+      justifyContent: 'center',
+      elevation: 6,
+    },
+  
+    loaderText: {
+      color:'#202A33',
+      fontSize: 14,
+      fontWeight: '600',
+      marginTop: 11,
+    },
   container: {
     flex: 1,
    // backgroundColor: '#E8EEF3',

@@ -16,6 +16,7 @@ import {
   Image,
   Platform,
   PanResponder,
+  Keyboard,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Dropdown } from 'react-native-element-dropdown';
@@ -28,14 +29,56 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import WebView from 'react-native-webview';
 import Pdf from 'react-native-pdf';
 import FileViewer from 'react-native-file-viewer';
+import CustomAlert, { AlertType } from '../utils/CustomAlert';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { generatePDF } from 'react-native-html-to-pdf';
+// import RNHTMLtoPDF from 'react-native-html-to-pdf';
+import {API_BASE_URL} from '../utils/api';
 
+import {
+  CameraOptions,
+  launchCamera,
+  launchImageLibrary,
+  ImagePickerResponse,
+  Asset,
+} from 'react-native-image-picker';
+// import Marker, { ImageFormat, Position } from 'react-native-image-marker';
+import Geolocation, { GeoPosition } from '@react-native-community/geolocation';
+
+import Marker, { ImageFormat, Position } from 'react-native-image-marker';
 interface Step {
   srNo: number;
   questionid: number;
   anssum: number;
 }
 
-// Optional document picker (install if you want actual file picker)
+interface IDropdownItem {
+  ddtext: string;
+  ddid: number | string;
+  formno: number;
+  questionid: number;
+  elementmstid: string;
+  tablemstid?: number;
+  ddval?: number | string;
+}
+
+interface IDropdownOption {
+  label: string;
+  value: number | string;
+  FormNoVal: number;
+  QuestionId: number;
+  ElementMasterId: string;
+  TableMstID: number;
+  ddval?: number | string;
+}
+
+interface IDependencyItem {
+  dependantelementmasterid: string | number;
+  showelementflag: number;
+  tablemstid?: number;
+  dropdownitems?: IDropdownItem[]; // optional if your API returns dropdown items
+}
+
 let DocumentPicker: any = null;
 try {
   // @ts-ignore
@@ -46,6 +89,39 @@ try {
 export default function Form7() {
   // Steps / questions
   // const [steps, setSteps] = useState<number[]>([]);
+
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertType, setAlertType] = useState<AlertType>('info');
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [activeImageTab, setActiveImageTab] = useState<
+    Record<string, 'before' | 'after'>
+  >({});
+
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
+  const [processingMessage, setProcessingMessage] = useState('');
+
+  const [tableImages, setTableImages] = useState<
+    Record<
+      string,
+      {
+        before: any[];
+        after: any[];
+      }
+    >
+  >({});
+
+  const showCustomAlert = (
+    type: AlertType,
+    message: string,
+    title?: string,
+  ) => {
+    setAlertType(type);
+    setAlertTitle(title || '');
+    setAlertMessage(message);
+    setAlertVisible(true);
+  };
   const [steps, setSteps] = useState<Step[]>([]);
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewUrl, setPreviewUrl] = useState('');
@@ -107,6 +183,7 @@ export default function Form7() {
   const disabledElementsRef = useRef<Record<string, boolean>>({});
   const dropdownValueRef = useRef<Record<string, number>>({});
   const [isFinalSubmitted, setIsFinalSubmitted] = useState(false);
+  const [isWebFinalSubmitted, setIsWebFinalSubmitted] = useState(false);
 
   const [showDatePicker, setShowDatePicker] = useState(false);
   // const [selectedDateKey, setSelectedDateKey] = useState('');
@@ -246,6 +323,24 @@ export default function Form7() {
 
     //console.log('✅ INITIAL DISABLED ELEMENTS LOADED', initialDisabled);
   }, [answers]); // depend on answers to run after API prefill
+
+  useEffect(() => {
+    checkFinalSubmitStatus();
+  }, []);
+
+  const checkFinalSubmitStatus = async () => {
+    try {
+      const status = await AsyncStorage.getItem(
+        `form7_final_submitted_${userID}`,
+      );
+
+      if (status === '1') {
+        setIsFinalSubmitted(true);
+      }
+    } catch (error) {
+      console.log('Error checking final submit status:', error);
+    }
+  };
 
   const isDisabled = (elementMstId: string | number) => {
     const elId = String(elementMstId);
@@ -409,38 +504,861 @@ export default function Form7() {
     villageCountFilled.current = true;
   }, [villagePeopleCount, questionDetails]);
 
-  interface IDropdownItem {
-    ddtext: string;
-    ddid: number | string;
-    formno: number;
-    questionid: number;
-    elementmstid: string;
-    tablemstid?: number;
-    ddval?: number | string;
-  }
+  useEffect(() => {
+    loadImageDrafts();
+  }, []);
 
-  interface IDropdownOption {
-    label: string;
-    value: number | string;
-    FormNoVal: number;
-    QuestionId: number;
-    ElementMasterId: string;
-    TableMstID: number;
-    ddval?: number | string;
-  }
+  const loadImageDrafts = async () => {
+    try {
+      const existingDraftsString = await AsyncStorage.getItem(
+        'TABLE_IMAGE_DRAFTS',
+      );
 
-  interface IDependencyItem {
-    dependantelementmasterid: string | number;
-    showelementflag: number;
-    tablemstid?: number;
-    dropdownitems?: IDropdownItem[]; // optional if your API returns dropdown items
+      if (!existingDraftsString) {
+        return;
+      }
+
+      const existingDrafts = JSON.parse(existingDraftsString);
+
+      if (!existingDrafts || typeof existingDrafts !== 'object') {
+        return;
+      }
+
+      // Convert saved drafts into tableImages structure
+      const restoredImages: Record<string, any> = {};
+
+      Object.keys(existingDrafts).forEach(key => {
+        const draft = existingDrafts[key];
+
+        restoredImages[key] = {
+          before: draft.before || [],
+          after: draft.after || [],
+        };
+      });
+
+      setTableImages(prev => ({
+        ...prev,
+        ...restoredImages,
+      }));
+
+      console.log('Image drafts restored:', restoredImages);
+    } catch (error) {
+      console.log('Load draft error:', error);
+    }
+  };
+
+  const saveDraft = async (imageTabKey: string) => {
+    try {
+      const images = tableImages[imageTabKey];
+
+      if (!images) {
+        Alert.alert('Draft', 'No images found to save.');
+        return;
+      }
+
+      const draftData = {
+        imageTabKey,
+        before: images.before || [],
+        after: images.after || [],
+        savedAt: new Date().toISOString(),
+      };
+
+      // Get existing drafts
+      const existingDraftsString = await AsyncStorage.getItem(
+        'TABLE_IMAGE_DRAFTS',
+      );
+
+      let existingDrafts: Record<string, any> = {};
+
+      if (existingDraftsString) {
+        try {
+          existingDrafts = JSON.parse(existingDraftsString);
+        } catch (error) {
+          console.log('Draft parse error:', error);
+          existingDrafts = {};
+        }
+      }
+
+      // Save / update this particular table cell
+      existingDrafts[imageTabKey] = draftData;
+
+      await AsyncStorage.setItem(
+        'TABLE_IMAGE_DRAFTS',
+        JSON.stringify(existingDrafts),
+      );
+
+      Alert.alert(
+        'Draft Saved',
+        'Before आणि After फोटो local storage मध्ये save झाले.',
+      );
+
+      console.log('Draft saved:', draftData);
+    } catch (error) {
+      console.log('Save draft error:', error);
+
+      Alert.alert('Error', 'Draft save करण्यात अडचण आली.');
+    }
+  };
+
+  // const generateImagesPDF = async (imageTabKey: string) => {
+  //   try {
+  //     const images = tableImages[imageTabKey];
+
+  //     if (!images) {
+  //       Alert.alert('PDF', 'Please select all images first.');
+  //       return;
+  //     }
+
+  //     // Must have exactly 3 Before + 3 After
+  //     if (images.before.length !== 3 || images.after.length !== 3) {
+  //       Alert.alert('PDF', 'Please select 3 Before and 3 After images.');
+  //       return;
+  //     }
+
+  //     const allImages = [...images.before, ...images.after];
+
+  //     const imageHtml: string[] = [];
+
+  //     for (const image of allImages) {
+  //       const imagePath = image.uri.replace('file://', '');
+
+  //       const base64 = await RNFS.readFile(imagePath, 'base64');
+
+  //       imageHtml.push(`
+  //       <div class="image-container">
+  //         <img src="data:image/jpeg;base64,${base64}" />
+  //       </div>
+  //     `);
+  //     }
+
+  //     const html = `
+  //     <html>
+  //       <head>
+  //         <style>
+  //           @page {
+  //             margin: 20px;
+  //           }
+
+  //           html, body {
+  //             margin: 0;
+  //             padding: 0;
+  //             width: 100%;
+  //             height: 100%;
+  //           }
+
+  //           .image-container {
+  //             width: 100%;
+  //             height: 100%;
+  //             page-break-after: always;
+  //             display: flex;
+  //             justify-content: center;
+  //             align-items: center;
+  //           }
+
+  //           img {
+  //             max-width: 100%;
+  //             max-height: 100%;
+  //             object-fit: contain;
+  //           }
+
+  //           .image-container:last-child {
+  //             page-break-after: auto;
+  //           }
+  //         </style>
+  //       </head>
+
+  //       <body>
+  //         ${imageHtml.join('')}
+  //       </body>
+  //     </html>
+  //   `;
+
+  //     const pdf = await generatePDF({
+  //       html,
+  //       fileName: `MSPRA_${Date.now()}`,
+  //       directory: 'Download',
+  //     });
+
+
+  //     console.log('PDF generated:', pdf.filePath);
+
+  //     if (pdf.filePath) {
+  //       // Automatically open PDF preview
+  //       await FileViewer.open(pdf.filePath, {
+  //         showOpenWithDialog: true,
+  //         showAppsSuggestions: true,
+  //       });
+  //     }
+  //   } catch (error) {
+  //     console.error('PDF generation/open error:', error);
+
+  //     Alert.alert('PDF Error', 'Unable to create or open PDF.');
+  //   }
+  // };
+
+  const generateImagesPDF = async (
+  imageTabKey: string,
+  questionId: number,
+  elementMstId: string,
+  tableMstId: number,
+  elementNo: string,
+) => {
+  try {
+    const images = tableImages[imageTabKey];
+
+    if (!images) {
+      Alert.alert('PDF', 'Please select all images first.');
+      return null;
+    }
+
+    if (
+      images.before.length !== 3 ||
+      images.after.length !== 3
+    ) {
+      Alert.alert(
+        'PDF',
+        'Please select 3 Before and 3 After images.',
+      );
+      return null;
+    }
+
+    const allImages = [
+      ...images.before,
+      ...images.after,
+    ];
+
+    const imageHtml: string[] = [];
+
+    for (const image of allImages) {
+      if (!image?.uri) {
+        continue;
+      }
+
+      let imagePath = image.uri;
+
+      if (imagePath.startsWith('file://')) {
+        imagePath = imagePath.replace('file://', '');
+      }
+
+      const base64 = await RNFS.readFile(
+        imagePath,
+        'base64',
+      );
+
+      imageHtml.push(`
+        <div class="image-container">
+          <img src="data:image/jpeg;base64,${base64}" />
+        </div>
+      `);
+    }
+
+    if (imageHtml.length !== 6) {
+      Alert.alert(
+        'PDF',
+        'Unable to read all 6 images.',
+      );
+      return null;
+    }
+
+    const html = `
+      <html>
+        <head>
+          <style>
+            @page {
+              margin: 20px;
+            }
+
+            html, body {
+              margin: 0;
+              padding: 0;
+              width: 100%;
+              height: 100%;
+            }
+
+            .image-container {
+              width: 100%;
+              height: 100%;
+              page-break-after: always;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+            }
+
+            img {
+              max-width: 100%;
+              max-height: 100%;
+              object-fit: contain;
+            }
+
+            .image-container:last-child {
+              page-break-after: auto;
+            }
+          </style>
+        </head>
+
+        <body>
+          ${imageHtml.join('')}
+        </body>
+      </html>
+    `;
+
+    const pdf = await generatePDF({
+      html,
+      fileName: `MSPRA_${Date.now()}`,
+      directory: 'Download',
+    });
+
+    console.log('📄 PDF generated:', pdf);
+
+    if (!pdf?.filePath) {
+      throw new Error('PDF path not generated');
+    }
+
+
+    let pdfUri = pdf.filePath;
+
+    if (
+      pdfUri &&
+      !pdfUri.startsWith('file://') &&
+      !pdfUri.startsWith('content://')
+    ) {
+      pdfUri = `file://${pdfUri}`;
+    }
+
+    const pdfName =
+      `MSPRA_${questionId}_${elementMstId}_${tableMstId}.pdf`;
+
+    let pdfPathForSize = pdfUri;
+
+    if (pdfPathForSize.startsWith('file://')) {
+      pdfPathForSize =
+        pdfPathForSize.replace('file://', '');
+    }
+
+    let pdfSize = 0;
+
+    try {
+      const stat = await RNFS.stat(
+        pdfPathForSize,
+      );
+
+      pdfSize = Number(stat.size || 0);
+    } catch (sizeError) {
+      console.log(
+        '⚠️ Unable to get PDF size:',
+        sizeError,
+      );
+    }
+
+    const pdfFile = {
+      uri: pdfUri,
+      path: pdfPathForSize,
+      name: pdfName,
+      fileName: pdfName,
+      type: 'application/pdf',
+      size: pdfSize,
+      fileSize: pdfSize,
+      FormNoVal: 7,
+      ElementMasterId: elementMstId,
+      QuestionId: questionId,
+      TableMstID: tableMstId,
+      IsFromMobileApp: 1,
+    };
+
+    const elementNo = '211'
+    console.log(
+      '📄 PDF file stored in answers:',
+      pdfFile,
+    );
+
+    setAnswers(prev => ({
+      ...prev,
+
+      [elementNo]: {
+        ...(typeof prev[elementNo] === 'object'
+          ? prev[elementNo]
+          : {}),
+        files: [pdfFile],
+        FormNoVal: 7,
+        ElementMasterId: elementMstId,
+        QuestionId: questionId,
+        TableMstID: tableMstId,
+      },
+    }));
+
+    await FileViewer.open(pdf.filePath, {
+      showOpenWithDialog: true,
+      showAppsSuggestions: true,
+    });
+
+    return pdfFile;
+
+  } catch (error) {
+    console.error(
+      'PDF generation/open error:',
+      error,
+    );
+
+    Alert.alert(
+      'PDF Error',
+      'Unable to create or open PDF.',
+    );
+
+    return null;
   }
+};
+
+
+  const getImageTabKey = (
+    questionId: string,
+    tableMstId: string | number,
+    rowIndex: number,
+    colIndex: number,
+  ) => {
+    return `${questionId}_${tableMstId}_${rowIndex}_${colIndex}`;
+  };
+
+  const openImagePreview = (image: any) => {
+    if (!image?.uri) {
+      console.log('Invalid preview image:', image);
+      return;
+    }
+
+    let imageUri = image.uri;
+
+    // Android local path
+    if (imageUri.startsWith('/data/') || imageUri.startsWith('/storage/')) {
+      imageUri = `file://${imageUri}`;
+    }
+
+    console.log('Opening preview:', imageUri);
+
+    setPreviewImage(imageUri);
+  };
+
+  const handleImageTabChange = (key: string, tab: 'before' | 'after') => {
+    setActiveImageTab(prev => ({
+      ...prev,
+      [key]: tab,
+    }));
+  };
+
+  
+  const getCurrentLocation = (): Promise<GeoPosition> => {
+    return new Promise((resolve, reject) => {
+      let resolved = false;
+
+      const success = (position: GeoPosition) => {
+        if (resolved) return;
+
+        resolved = true;
+
+        console.log('Location received:', {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+        });
+
+        resolve(position);
+      };
+
+      const failure = (error: any) => {
+        console.log('High accuracy location error:', error);
+
+        // Fast fallback
+        Geolocation.getCurrentPosition(
+          success,
+          fallbackError => {
+            console.log('Low accuracy location error:', fallbackError);
+
+            if (!resolved) {
+              resolved = true;
+              reject(fallbackError);
+            }
+          },
+          {
+            enableHighAccuracy: false,
+            timeout: 5000,
+            maximumAge: 120000,
+          },
+        );
+      };
+
+      // First try high accuracy
+      Geolocation.getCurrentPosition(success, failure, {
+        enableHighAccuracy: true,
+        timeout: 8000,
+        maximumAge: 30000,
+      });
+    });
+  };
+
+  
+  const getAddressFromCoordinates = async (
+    latitude: number,
+    longitude: number,
+  ) => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`,
+        {
+          headers: {
+            Accept: 'application/json',
+            'User-Agent': 'MSPRA-Mobile-App',
+          },
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error('Unable to get address');
+      }
+
+      const data = await response.json();
+
+      console.log('Reverse geocode:', data);
+
+      const address = data.address || {};
+
+      const houseNumber = address.house_number || '';
+      const road = address.road || address.pedestrian || address.street || '';
+
+      const locality =
+        address.suburb || address.neighbourhood || address.locality || '';
+
+      const city =
+        address.city ||
+        address.town ||
+        address.village ||
+        address.municipality ||
+        '';
+
+      const state = address.state || '';
+
+      const postcode = address.postcode || '';
+
+      const country = address.country || '';
+
+      const fullAddress = [
+        houseNumber,
+        road,
+        locality,
+        city,
+        state,
+        postcode,
+        country,
+      ]
+        .filter(Boolean)
+        .join(', ');
+
+      return {
+        fullAddress,
+        city,
+        state,
+        country,
+        postcode,
+      };
+    } catch (error) {
+      console.log('Reverse geocoding error:', error);
+
+      return {
+        fullAddress: '',
+        city: '',
+        state: '',
+        country: '',
+        postcode: '',
+      };
+    }
+  };
+
+  const processImageWithLocation = async (
+    image: Asset,
+    elementNo: string,
+    questionId: number,
+    elementMstId: string,
+    tableMstId: number = 0,
+  ): Promise<any> => {
+    try {
+      if (!image.uri) {
+        Alert.alert('Error', 'Invalid image');
+        return null;
+      }
+
+      setIsProcessingImage(true);
+      //setProcessingMessage('Loading ...............');
+
+      const position = await getCurrentLocation();
+      const latitude = position.coords.latitude;
+      const longitude = position.coords.longitude;
+      const accuracy = position.coords.accuracy;
+
+      console.log('Latitude:', latitude);
+      console.log('Longitude:', longitude);
+
+      const addressData = await getAddressFromCoordinates(latitude, longitude);
+
+      console.log('Address:', addressData);
+      const now = new Date();
+
+      const dateTime = now.toLocaleString('en-IN', {
+        weekday: 'long',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+      });
+
+      const locationTitle = [
+        addressData.city,
+        addressData.state,
+        addressData.country,
+      ]
+        .filter(Boolean)
+        .join(', ');
+
+      const geoText =
+        `${locationTitle || 'Location'}\n` +
+        `${addressData.fullAddress || 'Address unavailable'}\n` +
+        `Lat ${latitude.toFixed(6)}°  Long ${longitude.toFixed(6)}°\n` +
+        `${dateTime} GMT +05:30`;
+
+      console.log('Geo text:', geoText);
+
+      //setProcessingMessage('Adding location to image...');
+
+      const markedImage = await Marker.markText({
+        backgroundImage: {
+          src: image.uri,
+          scale: 1,
+        },
+
+        watermarkTexts: [
+          {
+            text: geoText,
+
+            position: {
+              position: Position.bottomLeft,
+              X: 25,
+              Y: 25,
+            },
+
+            style: {
+              color: '#FFFFFF',
+
+              fontSize: 24,
+
+              bold: true,
+
+              textAlign: 'left',
+
+              // BLACK GPS CAMERA CARD
+              textBackgroundStyle: {
+                color: '#DD000000',
+
+                paddingX: 22,
+                paddingY: 18,
+
+                cornerRadius: {
+                  topLeft: {
+                    x: 20,
+                    y: 20,
+                  },
+
+                  topRight: {
+                    x: 20,
+                    y: 20,
+                  },
+
+                  bottomLeft: {
+                    x: 20,
+                    y: 20,
+                  },
+
+                  bottomRight: {
+                    x: 20,
+                    y: 20,
+                  },
+                },
+              },
+            },
+          },
+        ],
+
+        filename: `geotag_${Date.now()}`,
+
+        saveFormat: ImageFormat.jpg,
+
+        quality: 90,
+      });
+
+      console.log('Marked image:', markedImage);
+
+      if (!markedImage?.uri) {
+        throw new Error('Unable to generate marked image');
+      }
+      let processedUri = markedImage.uri;
+
+      if (
+        processedUri &&
+        !processedUri.startsWith('file://') &&
+        (processedUri.startsWith('/data/') ||
+          processedUri.startsWith('/storage/'))
+      ) {
+        processedUri = `file://${processedUri}`;
+      }
+
+      console.log('Final image URI:', processedUri);
+
+      const fileName = image.fileName || `geotagged_${Date.now()}.jpg`;
+      const processedImage = {
+        ...image,
+        // uri: markedImage.uri,
+        uri: processedUri,
+        fileName,
+        type: 'image/jpeg',
+        latitude,
+        longitude,
+        accuracy,
+        address: addressData.fullAddress,
+        city: addressData.city,
+        state: addressData.state,
+        country: addressData.country,
+      };
+
+      const geoTaggedFile = {
+        //uri: markedImage.uri,
+        uri: processedUri,
+        name: fileName,
+        type: 'image/jpeg',
+        FileSize: image.fileSize || 0,
+        FormNoVal: 7,
+        ElementMasterId: elementMstId,
+        QuestionId: questionId,
+        TableMstID: tableMstId,
+        Latitude: latitude,
+        Longitude: longitude,
+        Accuracy: accuracy,
+        Address: addressData.fullAddress,
+        City: addressData.city,
+        State: addressData.state,
+        Country: addressData.country,
+      };
+
+      setAnswers(prev => ({
+        ...prev,
+
+        [elementNo]: {
+          ...(typeof prev[elementNo] === 'object' ? prev[elementNo] : {}),
+
+          files: [geoTaggedFile],
+          FormNoVal: 7,
+          ElementMasterId: elementMstId,
+          QuestionId: questionId,
+          TableMstID: tableMstId,
+        },
+      }));
+
+      console.log('Processed image:', processedImage);
+
+      return processedImage;
+    } catch (error: any) {
+      console.log('Geo-tagging error:', error);
+
+      Alert.alert('Error', error?.message || 'Unable to process image.');
+
+      return null;
+    } finally {
+      setIsProcessingImage(false);
+      //setProcessingMessage('');
+    }
+  };
+
+  const handleChooseImage = async (
+    imageTabKey: string,
+    tab: 'before' | 'after',
+    tableMstId: number,
+    elementMstId:String
+  ) => {
+    try {
+      Keyboard.dismiss();
+      const existingImages = tableImages[imageTabKey]?.[tab] || [];
+
+      if (existingImages.length >= 3) {
+        return;
+      }
+
+      const result = await launchCamera({
+        mediaType: 'photo',
+        quality: 1,
+      });
+
+      if (result.didCancel) {
+        return;
+      }
+
+      if (!result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      const image = result.assets[0];
+
+      if (!image.uri) {
+        Alert.alert('Error', 'Invalid image');
+        return;
+      }
+
+      const processedImage = await processImageWithLocation(
+        image,
+        imageTabKey,
+        questionId,
+        String(elementMstId),
+        tableMstId,
+      );
+
+      if (!processedImage?.uri) {
+        return;
+      }
+
+      setTableImages(prev => {
+        const current = prev[imageTabKey] || {
+          before: [],
+          after: [],
+        };
+
+        const currentTabImages = current[tab] || [];
+
+        if (currentTabImages.length >= 3) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          [imageTabKey]: {
+            ...current,
+            [tab]: [...currentTabImages, processedImage],
+          },
+        };
+      });
+    } catch (error: any) {
+      console.log('Image capture error:', error);
+
+      Alert.alert(
+        'Error',
+        error?.message || 'Unable to capture and geotag image.',
+      );
+    }
+  };
 
   const fetchSteps = async (userId: string, bearerToken: string) => {
     setLoading(true);
     try {
+
+      const url = `${API_BASE_URL}/Form1QuestionMaster/GetForm1QuestionMaster`;
+
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/GetForm1QuestionMaster',
+        url,
         {
           method: 'POST',
           headers: {
@@ -463,6 +1381,12 @@ export default function Form7() {
       if (data && data.responseCode === 2000 && data.items) {
         setQuestions(data.items);
 
+        const webSubmitted = data.items?.some(
+          (item: { isfromfinalsubmitflag: any }) =>
+            Number(item.isfromfinalsubmitflag) === 1,
+        );
+
+        setIsWebFinalSubmitted(webSubmitted);
         // ✅ store full object
         const stepsArray: Step[] = data.items.map((item: any) => ({
           srNo: item.srNo,
@@ -495,8 +1419,11 @@ export default function Form7() {
     setLoadingDetails(true);
 
     try {
+
+      const url = `${API_BASE_URL}/Form1QuestionMaster/GetForm1QuestionByID`;
+
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/GetForm1QuestionByID',
+        url,
         {
           method: 'POST',
           headers: {
@@ -798,6 +1725,18 @@ export default function Form7() {
     });
   }, [activeStepIndex]);
 
+  useEffect(() => {
+    if (steps && steps.length > 0) {
+      const prefilledIndices = steps
+        .map((step: Step, index: number) => (step.anssum > 0 ? index : null))
+        .filter((index): index is number => index !== null);
+
+      setSubmittedSteps(prev =>
+        Array.from(new Set([...prev, ...prefilledIndices])),
+      );
+    }
+  }, [steps]);
+
   const fetchDropdownValues = async (
     questionId: number,
     elementMstId: string,
@@ -807,8 +1746,11 @@ export default function Form7() {
     mapKey: string,
   ) => {
     try {
+
+      const url = `${API_BASE_URL}/Form1QuestionMaster/GetForm1DropDownValues`;
+
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/GetForm1DropDownValues',
+        url,
         {
           method: 'POST',
           headers: {
@@ -883,8 +1825,10 @@ export default function Form7() {
     token: string,
   ) => {
     try {
+
+      const url = `${API_BASE_URL}/Form1QuestionMaster/GetForm1DropDownDependElement`;
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/GetForm1DropDownDependElement',
+        url,
         {
           method: 'POST',
           headers: {
@@ -946,8 +1890,11 @@ export default function Form7() {
     const mapKey = `${questionId}_${elementMstId}`;
 
     try {
+
+      const url = `${API_BASE_URL}/Form1QuestionMaster/GetForm1CheckboxValues`;
+
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/GetForm1CheckboxValues',
+        url,
         {
           method: 'POST',
           headers: {
@@ -1014,8 +1961,11 @@ export default function Form7() {
     const mapKey = `${questionId}_${elementMstId}_${tableMstId}`;
 
     try {
+
+      const url = `${API_BASE_URL}/Form1QuestionMaster/GetForm1TextBoxValues`;
+
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/GetForm1TextBoxValues',
+        url,
         {
           method: 'POST',
           headers: {
@@ -1087,8 +2037,11 @@ export default function Form7() {
     tableMstId: string,
   ) => {
     try {
+
+      const url = `${API_BASE_URL}/Form1QuestionMaster/GetFormTableValues`;
+
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/GetFormTableValues',
+        url,
         {
           method: 'POST',
           headers: {
@@ -1210,8 +2163,10 @@ export default function Form7() {
     const mapKey = `${questionId}_${elementMstId}`;
 
     try {
+      const url = `${API_BASE_URL}/Form1QuestionMaster/GetForm1UploadedDocVal`;
+
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/GetForm1UploadedDocVal',
+        url,
         {
           method: 'POST',
           headers: {
@@ -1281,8 +2236,10 @@ export default function Form7() {
     const mapKey = `${questionId}_${elementMstId}`;
 
     try {
+      const url = `${API_BASE_URL}/Form1QuestionMaster/GetForm1UploadedDocVal`;
+
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/GetForm1UploadedDocVal',
+        url,
         {
           method: 'POST',
           headers: {
@@ -1362,8 +2319,10 @@ export default function Form7() {
 
       console.log('Delete Payload:', payload);
 
+      const url = `${API_BASE_URL}/Form1QuestionMaster/DeleteTableRows`;
+
       const response = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/DeleteTableRows',
+        url,
         {
           method: 'POST',
           headers: {
@@ -1416,35 +2375,7 @@ export default function Form7() {
     });
   };
 
-  // const handleTableTextChange = (
-  //   elementKey: string,
-  //   text: string,
-  //   questionId: number,
-  //   elementMstId: string,
-  //   tableMstId: string | number,
-  //   rowIndex: number,
-  //   colIndex: number,
-  // ) => {
-  //   setAnswers(prev => {
-  //     const meta = prev[elementKey] ?? {};
-
-  //     return {
-  //       ...prev,
-  //       [elementKey]: {
-  //         ...meta,
-  //         value: text,
-  //         FormNoVal: meta.FormNoVal ?? 1,
-  //         ElementMasterId: elementMstId,
-  //         QuestionId: questionId,
-  //         TableMstID: tableMstId ?? 0,
-  //         RowIndex: rowIndex,
-  //         ColumnIndex: colIndex,
-  //         validationType: meta.validationType,
-  //       },
-  //     };
-  //   });
-  // };
-
+  
   const handleTableTextChange = (
     elementKey: string,
     text: string,
@@ -1473,7 +2404,6 @@ export default function Form7() {
         validationType: meta.validationType,
       };
 
-      // Remove old API-loaded value for the same textbox
       if (apiKey !== elementKey) {
         delete updated[apiKey];
       }
@@ -1503,10 +2433,7 @@ export default function Form7() {
     const payload: any[] = [];
 
     questionDetails.forEach(q => {
-      // ✅ Only dropdown elements
       if (q.rdformelementid !== 2) return;
-
-      // 🔑 Use the same key as in answers prefill
       const mapKey = `${q.rdformquestionid}_${q.elementmstid}`;
       const ans = answers[mapKey];
 
@@ -1620,6 +2547,7 @@ export default function Form7() {
 
     return payload;
   };
+
   const prepareCheckboxPayload = (questionId: number) => {
     const payload: any[] = [];
 
@@ -1655,6 +2583,84 @@ export default function Form7() {
     return payload;
   };
 
+  //added for geotag image
+
+//   const prepareDocumentPayload = async (questionId: number) => {
+//   const payload: any[] = [];
+//   let fileIndex = 0;
+
+//   for (const [elementNo, val] of Object.entries(answers)) {
+//     if (!val || typeof val !== 'object') continue;
+//     if (Number(val.QuestionId) !== Number(questionId)) continue;
+
+//     if (!val.files || !Array.isArray(val.files)) continue;
+
+//     for (const file of val.files) {
+//       if (!file?.uri && !file?.path) {
+//         console.log(
+//           '⏭ Skipping already uploaded file:',
+//           file?.name,
+//         );
+//         continue;
+//       }
+
+//       if (
+//         file.type !== 'application/pdf' &&
+//         !file.name?.toLowerCase().endsWith('.pdf')
+//       ) {
+//         console.log('⏭ Skipping non-PDF file:', file?.name);
+//         continue;
+//       }
+
+//       console.log('📄 Preparing PDF:', file);
+//       const base64Content = await readFileAsBase64(file);
+
+//       const fileName =
+//         file.name ||
+//         `Form7_${val.QuestionId}_${val.ElementMasterId}_${Date.now()}.pdf`;
+
+//       const filePath =
+//         `Form7/${username}/` +
+//         `${val.QuestionId}_${val.ElementMasterId}_` +
+//         `${val.TableMstID}_${fileName}`;
+
+//       payload.push({
+//         FormNoVal: String(7),
+//         ElementMasterId: String(
+//           val.ElementMasterId ?? file.ElementMasterId ?? 0,
+//         ),
+//         QuestionId: String(
+//           val.QuestionId ?? file.QuestionId ?? 0,
+//         ),
+
+//         FileName: fileName,
+//         FileType: 'application/pdf',
+//         FileSize: String(
+//           file.size ??
+//             file.fileSize ??
+//             file.FileSize ??
+//             0,
+//         ),
+
+//         FileContent: base64Content,
+//         FilePath: filePath,
+//         _fileIndex: fileIndex++,
+//         TableMstID: String(
+//           val.TableMstID ?? file.TableMstID ?? 0,
+//         ),
+
+//         IsFromMobileApp: 1,
+//       });
+//     }
+//   }
+
+//   console.log('📄 Final PDF documentPayload:', payload);
+
+//   return payload;
+// };
+
+
+  //working
   const prepareDocumentPayload = async (questionId: number) => {
     const payload: any[] = [];
     let fileIndex = 0;
@@ -1950,6 +2956,8 @@ export default function Form7() {
     if (!elementMstId) return false;
     return visibleElements[Number(elementMstId)] === false;
   };
+
+  const isFormFinalSubmitted = isFinalSubmitted || isWebFinalSubmitted;
 
   const handleSubmit = async () => {
     try {
@@ -2366,9 +3374,11 @@ export default function Form7() {
       };
       console.log('📤 Final Payload:', JSON.stringify(payload, null, 2));
 
+      const url = `${API_BASE_URL}/Form1QuestionMaster/InserUpdateFormElements`;
+
       // ================= SUBMIT =================
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/InserUpdateFormElements',
+        url,
         {
           method: 'POST',
           headers: {
@@ -2388,6 +3398,8 @@ export default function Form7() {
       setSubmittedSteps(prev =>
         prev.includes(activeStepIndex) ? prev : [...prev, activeStepIndex],
       );
+
+      await AsyncStorage.removeItem('TABLE_IMAGE_DRAFTS');
 
       Alert.alert(
         'Success',
@@ -2418,6 +3430,13 @@ export default function Form7() {
     }
   };
 
+  const isStepComplete = (index: number) => {
+    return submittedSteps.includes(index) || (steps[index]?.anssum ?? 0) > 0;
+  };
+
+  const allStepsSubmitted =
+    steps.length > 0 && steps.every((_, index) => isStepComplete(index));
+
   const finalSubmitForm = async () => {
     try {
       setLoading(true);
@@ -2426,11 +3445,10 @@ export default function Form7() {
       // ------------------ 1️⃣ Check missing steps ------------------
       const missingSteps = questions
         .map((q, index) => ({ ...q, index }))
-        .filter(q => !submittedSteps.includes(q.index));
+        .filter(q => !isStepComplete(q.index));
 
       if (missingSteps.length > 0) {
         const missingNumbers = missingSteps.map(s => `Q${s.srNo}`).join(', ');
-        console.log('⚠️ Missing questions:', missingNumbers);
         Alert.alert(
           'Incomplete Form',
           `Please complete the following questions before final submit:\n${missingNumbers}`,
@@ -2448,8 +3466,10 @@ export default function Form7() {
       };
       console.log('📤 Final Submit Payload:', payload);
 
+      const url = `${API_BASE_URL}/Form1QuestionMaster/InsertFormFinalSubmit`;
+
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/InsertFormFinalSubmit',
+        url,
         {
           method: 'POST',
           headers: {
@@ -2470,10 +3490,15 @@ export default function Form7() {
         return;
       }
 
-      if (data.items?.[0]?.isForm1Complete === 1) {
+      if (Number(data.items?.[0]?.isForm7Complete) === 1) {
+        await AsyncStorage.setItem(`form7_final_submitted_${userID}`, '1');
         console.log('✅ Final Form marked as complete on server');
         Alert.alert('Success', 'Final Form 7 submitted successfully!');
         setIsFinalSubmitted(true);
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Home' }],
+        });
       } else {
         console.log('❌ Form not complete on server');
         Alert.alert('Error', 'Form submission incomplete on server');
@@ -2562,20 +3587,63 @@ export default function Form7() {
     }
   };
 
+  // const readFileAsBase64 = async (file: any) => {
+  //   let filePath = file.uri;
+
+  //   // Android content:// fix
+  //   if (filePath.startsWith('content://')) {
+  //     const destPath = `${RNFS.TemporaryDirectoryPath}/${file.name}`;
+
+  //     await RNFS.copyFile(filePath, destPath);
+  //     filePath = destPath;
+  //   }
+
+  //   const base64 = await RNFS.readFile(filePath, 'base64');
+  //   return base64;
+  // };
+
   const readFileAsBase64 = async (file: any) => {
-    let filePath = file.uri;
+  try {
+    let filePath = file?.uri || file?.path;
+
+    if (!filePath) {
+      throw new Error('File URI/path not found');
+    }
 
     // Android content:// fix
     if (filePath.startsWith('content://')) {
-      const destPath = `${RNFS.TemporaryDirectoryPath}/${file.name}`;
+      const fileName =
+        file?.name || `temp_file_${Date.now()}`;
+
+      const destPath = `${RNFS.TemporaryDirectoryPath}/${fileName}`;
 
       await RNFS.copyFile(filePath, destPath);
+
       filePath = destPath;
     }
 
+    // Remove file:// before RNFS.readFile
+    if (filePath.startsWith('file://')) {
+      filePath = filePath.replace('file://', '');
+    }
+
+    console.log('📖 Reading file for Base64:', filePath);
+
     const base64 = await RNFS.readFile(filePath, 'base64');
+
+    console.log(
+      '✅ Base64 generated. Length:',
+      base64.length,
+    );
+
     return base64;
-  };
+  } catch (error) {
+    console.log('❌ readFileAsBase64 error:', error);
+    throw error;
+  }
+};
+
+
 
   const isValidWebsite = (value: string): boolean => {
     const regex =
@@ -2619,7 +3687,6 @@ export default function Form7() {
   };
 
   const isLastQuestion = activeStepIndex === totalSteps - 1;
-
   const isLastQuestionSubmitted = submittedSteps.includes(totalSteps - 1);
 
   const renderControl = (item: any) => {
@@ -2754,7 +3821,6 @@ export default function Form7() {
 
                   const numericValue = Number(selected.value);
 
-                  // 🔥 immediate update for first render
                   dropdownValueRef.current[mapKey] = numericValue;
 
                   handleDropdownChange(mapKey, {
@@ -2781,7 +3847,6 @@ export default function Form7() {
         const cbOptions = checkboxOptionsMap[mapKey] ?? [];
         const ansObj = answers[mapKey] ?? {};
 
-        // Selected values
         const selectedIds: number[] = Array.isArray(ansObj.value)
           ? ansObj.value.map((v: number | string) => Number(v))
           : [];
@@ -3129,7 +4194,6 @@ export default function Form7() {
                 );
               }}
               onContentSizeChange={(contentWidth: number) => {
-                // Save full content width temporarily.
                 horizontalMaxOffsetRef.current = contentWidth;
               }}
               style={{ marginVertical: 12 }}
@@ -3331,6 +4395,7 @@ export default function Form7() {
                           </View>
                         );
                       }
+
                       if (cell.type === 'dropdown') {
                         const ddMapKey = `${questionId}_${cell.elementMstId}`;
                         const ddOptions = dropdownOptionsMap[ddMapKey] ?? [];
@@ -3381,6 +4446,7 @@ export default function Form7() {
                           </>
                         );
                       }
+
                       if (cell.type === 'file') {
                         const fileKey = `${questionId}_${cell.tableMstId}_${rowIndex}_${colIndex}`;
                         const fileObj = answers[fileKey];
@@ -3502,6 +4568,631 @@ export default function Form7() {
                           </>
                         );
                       }
+
+
+
+                      //draft code
+
+                      // if (cell.type === 'file') {
+                      //   Keyboard.dismiss();
+                      //   const imageTabKey = `${questionId}_${cell.tableMstId}_${rowIndex}_${colIndex}`;
+
+                      //   const activeTab =
+                      //     activeImageTab[imageTabKey] || 'before';
+
+                      //   const images = tableImages[imageTabKey] || {
+                      //     before: [],
+                      //     after: [],
+                      //   };
+
+                      //   const currentImages = images[activeTab] || [];
+
+                      //   const isPdfReady =
+                      //     images.before.length === 3 &&
+                      //     images.after.length === 3;
+
+                      //   const tableFileKey = `${questionId}_${cell.elementMstId}_${cell.tableMstId}`;
+                      //   const apiFile = tableUploadedDocsMap[tableFileKey]?.[0];
+                      //   const answerFileKey = `${questionId}_${cell.tableMstId}_${rowIndex}_${colIndex}`;
+                      //   const localFile = answers[answerFileKey]?.files?.[0];
+
+                      //   return (
+                      //     <>
+                      //       <View
+                      //         key={colIndex}
+                      //         style={[
+                      //           styles.tableCell,
+                      //           getColumnStyle(colIndex, row.length),
+                      //           {
+                      //             borderWidth: 1,
+                      //             borderColor: '#ccc',
+                      //             padding: 8,
+                      //           },
+                      //         ]}
+                      //       >
+                      //         {apiFile && (
+                      //           <View
+                      //             style={{
+                      //               marginBottom: 8,
+                      //               padding: 7,
+                      //               backgroundColor: '#F8F9FA',
+                      //               borderRadius: 6,
+                      //               borderWidth: 1,
+                      //               borderColor: '#E0E0E0',
+                      //             }}
+                      //           >
+                      //             <View
+                      //               style={{
+                      //                 flexDirection: 'row',
+                      //                 alignItems: 'center',
+                      //                 width: '100%',
+                      //               }}
+                      //             >
+                      //               <MaterialCommunityIcons
+                      //                 name={
+                      //                   apiFile.name
+                      //                     ?.toLowerCase()
+                      //                     .endsWith('.pdf')
+                      //                     ? 'file-pdf-box'
+                      //                     : 'file-image-outline'
+                      //                 }
+                      //                 size={22}
+                      //                 color="#1976D2"
+                      //               />
+                      //               <Text
+                      //                 numberOfLines={1}
+                      //                 ellipsizeMode="tail"
+                      //                 style={{
+                      //                   flex: 1,
+                      //                   marginLeft: 6,
+                      //                   marginRight: 8,
+                      //                   fontSize: 12,
+                      //                   color: '#333',
+                      //                 }}
+                      //               >
+                      //                 {apiFile.name || 'Uploaded File'}
+                      //               </Text>
+
+                      //               <TouchableOpacity
+                      //                 activeOpacity={0.8}
+                      //                 onPress={() => {
+                      //                   const fileUrl =
+                      //                     apiFile.url ||
+                      //                     apiFile.fileURL ||
+                      //                     apiFile.uri;
+
+                      //                   if (!fileUrl) {
+                      //                     Alert.alert(
+                      //                       'Preview',
+                      //                       'File preview is not available.',
+                      //                     );
+                      //                     return;
+                      //                   }
+
+                      //                   setPreviewUrl(fileUrl);
+                      //                   setPreviewFileName(
+                      //                     apiFile.name || 'Uploaded File',
+                      //                   );
+
+                      //                   setPreviewVisible(true);
+                      //                 }}
+                      //                 style={{
+                      //                   width: 30,
+                      //                   height: 30,
+                      //                   borderRadius: 15,
+                      //                   justifyContent: 'center',
+                      //                   alignItems: 'center',
+                      //                 }}
+                      //               >
+                      //                 <MaterialCommunityIcons
+                      //                   name="eye-outline"
+                      //                   size={21}
+                      //                   color="#1976D2"
+                      //                 />
+                      //               </TouchableOpacity>
+                      //             </View>
+                      //           </View>
+                      //         )}
+
+                      //         <View
+                      //           style={{
+                      //             flexDirection: 'row',
+                      //             backgroundColor: '#EEF1F5',
+                      //             borderRadius: 9,
+                      //             padding: 3,
+                      //             marginBottom: 8,
+                      //             borderWidth: 1,
+                      //             borderColor: '#E2E6EA',
+                      //           }}
+                      //         >
+                      //           <TouchableOpacity
+                      //             activeOpacity={0.7}
+                      //             onPress={() =>
+                      //               handleImageTabChange(imageTabKey, 'before')
+                      //             }
+                      //             style={{
+                      //               flex: 1,
+                      //               paddingVertical: 8,
+                      //               borderRadius: 7,
+                      //               alignItems: 'center',
+                      //               justifyContent: 'center',
+                      //               backgroundColor:
+                      //                 activeTab === 'before'
+                      //                   ? '#FFFFFF'
+                      //                   : 'transparent',
+
+                      //               shadowColor:
+                      //                 activeTab === 'before'
+                      //                   ? '#000'
+                      //                   : 'transparent',
+                      //               shadowOffset: {
+                      //                 width: 0,
+                      //                 height: 1,
+                      //               },
+                      //               shadowOpacity:
+                      //                 activeTab === 'before' ? 0.12 : 0,
+                      //               shadowRadius: 2,
+                      //               elevation: activeTab === 'before' ? 2 : 0,
+                      //             }}
+                      //           >
+                      //             <View
+                      //               style={{
+                      //                 flexDirection: 'row',
+                      //                 alignItems: 'center',
+                      //                 gap: 5,
+                      //               }}
+                      //             >
+                      //               <MaterialCommunityIcons
+                      //                 name="image-outline"
+                      //                 size={16}
+                      //                 color={
+                      //                   activeTab === 'before'
+                      //                     ? '#1976D2'
+                      //                     : '#777'
+                      //                 }
+                      //               />
+
+                      //               <Text
+                      //                 style={{
+                      //                   fontSize: 13,
+                      //                   fontWeight:
+                      //                     activeTab === 'before'
+                      //                       ? '700'
+                      //                       : '500',
+                      //                   color:
+                      //                     activeTab === 'before'
+                      //                       ? '#1976D2'
+                      //                       : '#555',
+                      //                 }}
+                      //               >
+                      //                 Before
+                      //               </Text>
+
+                      //               {images.before.length > 0 && (
+                      //                 <View
+                      //                   style={{
+                      //                     minWidth: 18,
+                      //                     height: 18,
+                      //                     paddingHorizontal: 4,
+                      //                     borderRadius: 9,
+                      //                     backgroundColor:
+                      //                       activeTab === 'before'
+                      //                         ? '#1976D2'
+                      //                         : '#BDBDBD',
+                      //                     justifyContent: 'center',
+                      //                     alignItems: 'center',
+                      //                   }}
+                      //                 >
+                      //                   <Text
+                      //                     style={{
+                      //                       color: '#FFF',
+                      //                       fontSize: 10,
+                      //                       fontWeight: '700',
+                      //                     }}
+                      //                   >
+                      //                     {images.before.length}
+                      //                   </Text>
+                      //                 </View>
+                      //               )}
+                      //             </View>
+                      //           </TouchableOpacity>
+
+                      //           <TouchableOpacity
+                      //             activeOpacity={0.7}
+                      //             onPress={() =>
+                      //               handleImageTabChange(imageTabKey, 'after')
+                      //             }
+                      //             style={{
+                      //               flex: 1,
+                      //               paddingVertical: 8,
+                      //               borderRadius: 7,
+                      //               alignItems: 'center',
+                      //               justifyContent: 'center',
+                      //               backgroundColor:
+                      //                 activeTab === 'after'
+                      //                   ? '#FFFFFF'
+                      //                   : 'transparent',
+
+                      //               shadowColor:
+                      //                 activeTab === 'after'
+                      //                   ? '#000'
+                      //                   : 'transparent',
+                      //               shadowOffset: {
+                      //                 width: 0,
+                      //                 height: 1,
+                      //               },
+                      //               shadowOpacity:
+                      //                 activeTab === 'after' ? 0.12 : 0,
+                      //               shadowRadius: 2,
+                      //               elevation: activeTab === 'after' ? 2 : 0,
+                      //             }}
+                      //           >
+                      //             <View
+                      //               style={{
+                      //                 flexDirection: 'row',
+                      //                 alignItems: 'center',
+                      //                 gap: 5,
+                      //               }}
+                      //             >
+                      //               <MaterialCommunityIcons
+                      //                 name="image-multiple-outline"
+                      //                 size={16}
+                      //                 color={
+                      //                   activeTab === 'after'
+                      //                     ? '#1976D2'
+                      //                     : '#777'
+                      //                 }
+                      //               />
+
+                      //               <Text
+                      //                 style={{
+                      //                   fontSize: 13,
+                      //                   fontWeight:
+                      //                     activeTab === 'after' ? '700' : '500',
+                      //                   color:
+                      //                     activeTab === 'after'
+                      //                       ? '#1976D2'
+                      //                       : '#555',
+                      //                 }}
+                      //               >
+                      //                 After
+                      //               </Text>
+
+                      //               {images.after.length > 0 && (
+                      //                 <View
+                      //                   style={{
+                      //                     minWidth: 18,
+                      //                     height: 18,
+                      //                     paddingHorizontal: 4,
+                      //                     borderRadius: 9,
+                      //                     backgroundColor:
+                      //                       activeTab === 'after'
+                      //                         ? '#1976D2'
+                      //                         : '#BDBDBD',
+                      //                     justifyContent: 'center',
+                      //                     alignItems: 'center',
+                      //                   }}
+                      //                 >
+                      //                   <Text
+                      //                     style={{
+                      //                       color: '#FFF',
+                      //                       fontSize: 10,
+                      //                       fontWeight: '700',
+                      //                     }}
+                      //                   >
+                      //                     {images.after.length}
+                      //                   </Text>
+                      //                 </View>
+                      //               )}
+                      //             </View>
+                      //           </TouchableOpacity>
+                      //         </View>
+
+                      //         <Text
+                      //           style={{
+                      //             fontSize: 10,
+                      //             color: '#D32F2F',
+                      //             fontWeight: '500',
+                      //           }}
+                      //         >
+                      //           सूचना: Before आणि After साठी प्रत्येकी ३ फोटो
+                      //           जोडा व PDF तयार करा.
+                      //         </Text>
+
+                      //         <View
+                      //           style={{
+                      //             flexDirection: 'row',
+                      //             alignItems: 'center',
+                      //             marginTop: 8,
+                      //             gap: 6,
+                      //           }}
+                      //         >
+                      //           <TouchableOpacity
+                      //             activeOpacity={0.8}
+                      //             disabled={currentImages.length >= 3}
+                      //             onPress={() =>
+                      //               handleChooseImage(
+                      //                 imageTabKey,
+                      //                 activeTab,
+                      //                 tableMstId,
+                      //                 elementMstId
+                      //               )
+                      //             }
+                      //             style={{
+                      //               height: 32,
+                      //               minWidth: 70,
+                      //               paddingHorizontal: 10,
+                      //               borderRadius: 5,
+                      //               backgroundColor:
+                      //                 currentImages.length >= 3
+                      //                   ? '#D0D0D0'
+                      //                   : '#1976D2',
+                      //               justifyContent: 'center',
+                      //               alignItems: 'center',
+                      //               flexDirection: 'row',
+                      //               gap: 4,
+                      //               opacity:
+                      //                 currentImages.length >= 3 ? 0.6 : 1,
+                      //             }}
+                      //           >
+                      //             <MaterialCommunityIcons
+                      //               name="camera-plus"
+                      //               size={17}
+                      //               color={
+                      //                 currentImages.length >= 3
+                      //                   ? '#999999'
+                      //                   : '#FFFFFF'
+                      //               }
+                      //             />
+
+                      //             <Text
+                      //               style={{
+                      //                 color:
+                      //                   currentImages.length >= 3
+                      //                     ? '#999999'
+                      //                     : '#FFFFFF',
+                      //                 fontSize: 11,
+                      //                 fontWeight: '600',
+                      //               }}
+                      //             >
+                      //               Photo
+                      //             </Text>
+                      //           </TouchableOpacity>
+
+                      //           <TouchableOpacity
+                      //             activeOpacity={0.8}
+                      //             disabled={!isPdfReady}
+                      //             onPress={() => 
+                      //               generateImagesPDF(
+                      //                   imageTabKey,
+                      //                   questionId,
+                      //                   elementMstId,
+                      //                   tableMstId,
+                      //                   cellKey
+                      //                 )
+                      //             }
+                      //             style={{
+                      //               height: 32,
+                      //               minWidth: 70,
+                      //               paddingHorizontal: 10,
+                      //               borderRadius: 5,
+                      //               backgroundColor: isPdfReady
+                      //                 ? '#4CAF50'
+                      //                 : '#D0D0D0',
+                      //               justifyContent: 'center',
+                      //               alignItems: 'center',
+                      //               flexDirection: 'row',
+                      //               gap: 4,
+                      //             }}
+                      //           >
+                      //             <MaterialCommunityIcons
+                      //               name="file-pdf-box"
+                      //               size={18}
+                      //               color={isPdfReady ? '#FFFFFF' : '#999999'}
+                      //             />
+
+                      //             <Text
+                      //               style={{
+                      //                 color: isPdfReady ? '#FFFFFF' : '#999999',
+                      //                 fontSize: 11,
+                      //                 fontWeight: '600',
+                      //               }}
+                      //             >
+                      //               PDF
+                      //             </Text>
+                      //           </TouchableOpacity>
+
+                      //           <TouchableOpacity
+                      //             activeOpacity={0.8}
+                      //             disabled={
+                      //               isPdfReady ||
+                      //               (images.before.length === 0 &&
+                      //                 images.after.length === 0)
+                      //             }
+                      //             onPress={() => {
+                      //               saveDraft(imageTabKey);
+                      //             }}
+                      //             style={{
+                      //               height: 32,
+                      //               minWidth: 70,
+                      //               paddingHorizontal: 10,
+                      //               borderRadius: 5,
+                      //               backgroundColor:
+                      //                 !isPdfReady &&
+                      //                 (images.before.length > 0 ||
+                      //                   images.after.length > 0)
+                      //                   ? '#FF9800'
+                      //                   : '#D0D0D0',
+                      //               justifyContent: 'center',
+                      //               alignItems: 'center',
+                      //               flexDirection: 'row',
+                      //               gap: 4,
+                      //               opacity:
+                      //                 isPdfReady ||
+                      //                 (images.before.length === 0 &&
+                      //                   images.after.length === 0)
+                      //                   ? 0.6
+                      //                   : 1,
+                      //             }}
+                      //           >
+                      //             <MaterialCommunityIcons
+                      //               name="content-save-outline"
+                      //               size={17}
+                      //               color={
+                      //                 !isPdfReady &&
+                      //                 (images.before.length > 0 ||
+                      //                   images.after.length > 0)
+                      //                   ? '#FFFFFF'
+                      //                   : '#999999'
+                      //               }
+                      //             />
+
+                      //             <Text
+                      //               style={{
+                      //                 color:
+                      //                   !isPdfReady &&
+                      //                   (images.before.length > 0 ||
+                      //                     images.after.length > 0)
+                      //                     ? '#FFFFFF'
+                      //                     : '#999999',
+                      //                 fontSize: 11,
+                      //                 fontWeight: '600',
+                      //               }}
+                      //             >
+                      //               Draft
+                      //             </Text>
+                      //           </TouchableOpacity>
+                      //         </View>
+
+                      //         {currentImages.length > 0 && (
+                      //           <View
+                      //             style={{
+                      //               flexDirection: 'row',
+                      //               marginTop: 8,
+                      //               gap: 6,
+                      //             }}
+                      //           >
+                      //             {currentImages.map(
+                      //               (image: any, index: number) => (
+                      //                 <View
+                      //                   key={index}
+                      //                   style={{
+                      //                     width: 55,
+                      //                     height: 55,
+                      //                     borderRadius: 5,
+                      //                     overflow: 'hidden',
+                      //                     borderWidth: 1,
+                      //                     borderColor: '#D0D0D0',
+                      //                   }}
+                      //                 >
+                      //                   <TouchableOpacity
+                      //                     activeOpacity={0.8}
+                      //                     onPress={() =>
+                      //                       openImagePreview(image)
+                      //                     }
+                      //                     style={{
+                      //                       width: '100%',
+                      //                       height: '100%',
+                      //                     }}
+                      //                   >
+                      //                     <Image
+                      //                       source={{
+                      //                         uri: image.uri,
+                      //                       }}
+                      //                       style={{
+                      //                         width: '100%',
+                      //                         height: '100%',
+                      //                       }}
+                      //                       resizeMode="cover"
+                      //                       onLoad={() => {
+                      //                         console.log(
+                      //                           'Thumbnail loaded:',
+                      //                           image.uri,
+                      //                         );
+                      //                       }}
+                      //                       onError={error => {
+                      //                         console.log(
+                      //                           'Thumbnail load error:',
+                      //                           image.uri,
+                      //                           error.nativeEvent,
+                      //                         );
+                      //                       }}
+                      //                     />
+                      //                   </TouchableOpacity>
+
+                      //                   <TouchableOpacity
+                      //                     activeOpacity={0.8}
+                      //                     onPress={() => {
+                      //                       setTableImages(prev => ({
+                      //                         ...prev,
+
+                      //                         [imageTabKey]: {
+                      //                           ...prev[imageTabKey],
+
+                      //                           [activeTab]: prev[imageTabKey][
+                      //                             activeTab
+                      //                           ].filter(
+                      //                             (_: any, i: number) =>
+                      //                               i !== index,
+                      //                           ),
+                      //                         },
+                      //                       }));
+                      //                     }}
+                      //                     style={{
+                      //                       position: 'absolute',
+                      //                       right: 2,
+                      //                       top: 2,
+                      //                       width: 18,
+                      //                       height: 18,
+                      //                       borderRadius: 9,
+                      //                       backgroundColor: 'rgba(0,0,0,0.65)',
+                      //                       justifyContent: 'center',
+                      //                       alignItems: 'center',
+                      //                     }}
+                      //                   >
+                      //                     <Text
+                      //                       style={{
+                      //                         color: '#fff',
+                      //                         fontSize: 13,
+                      //                         lineHeight: 16,
+                      //                         fontWeight: 'bold',
+                      //                       }}
+                      //                     >
+                      //                       ×
+                      //                     </Text>
+                      //                   </TouchableOpacity>
+                      //                 </View>
+                      //               ),
+                      //             )}
+                      //           </View>
+                      //         )}
+                      //       </View>
+
+                      //       {colIndex === row.length - 1 && (
+                      //         <View
+                      //           style={[
+                      //             styles.tableCell,
+                      //             {
+                      //               width: 120,
+                      //               justifyContent: 'center',
+                      //               alignItems: 'center',
+                      //               borderWidth: 1,
+                      //               borderColor: '#ccc',
+                      //             },
+                      //           ]}
+                      //         >
+                      //           <TouchableOpacity
+                      //             style={styles.deleteBtn}
+                      //             onPress={() => handleDeleteRow(rowIndex, row)}
+                      //           >
+                      //             <Text style={{ color: '#fff' }}>Delete</Text>
+                      //           </TouchableOpacity>
+                      //         </View>
+                      //       )}
+                      //     </>
+                      //   );
+                      // }
+
                       return (
                         <>
                           <View
@@ -3537,6 +5228,70 @@ export default function Form7() {
         return null;
     }
   };
+
+  
+    const renderProgress = () => {
+      return (
+        <>
+          <ScrollView
+            ref={scrollRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.progressContainer}
+          >
+            {steps.map((step: Step, index: number) => {
+              const isActive = index === activeStepIndex;
+              const isSubmitted = submittedSteps.includes(index);
+              const isAnswered = Number(step.anssum || 0) > 0;
+              const isCompleted = isSubmitted || isAnswered;
+  
+              const previousCompleted =
+                index > 0 &&
+                (submittedSteps.includes(index - 1) ||
+                  Number(steps[index - 1]?.anssum || 0) > 0);
+  
+              return (
+                <React.Fragment
+                  key={String(step.questionid ?? step.srNo ?? index)}
+                >
+                  {index !== 0 && (
+                    <View
+                      style={[
+                        styles.progressLine,
+                        previousCompleted && styles.progressLineCompleted,
+                      ]}
+                    />
+                  )}
+  
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => onStepPress(index, step.questionid)}
+                  >
+                    <View
+                      style={[
+                        styles.progressCircle,
+                        isCompleted && styles.progressCircleCompleted,
+                        isActive && styles.progressCircleActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.progressText,
+                          isCompleted && styles.progressTextCompleted,
+                          isActive && styles.progressTextActive,
+                        ]}
+                      >
+                        {step.srNo}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </React.Fragment>
+              );
+            })}
+          </ScrollView>
+        </>
+      );
+    };
 
   const isPdf = previewUrl?.toLowerCase().includes('.pdf');
   const isImage =
@@ -3659,14 +5414,14 @@ export default function Form7() {
   //               );
   //             })}
 
-  //             <View style={styles.btnRow}>
+  //             {/* <View style={styles.btnRow}>
   //               {activeStepIndex > 0 && (
   //                 <TouchableOpacity style={styles.prevBtn} onPress={handlePrev}>
   //                   <Text style={styles.btnText}>मागील</Text>
   //                 </TouchableOpacity>
   //               )}
 
-  //               {!isFinalSubmitted &&
+  //               {!isFormFinalSubmitted &&
   //                 !(isLastQuestion && isLastQuestionSubmitted) && (
   //                   <TouchableOpacity
   //                     style={styles.prevBtn}
@@ -3676,82 +5431,138 @@ export default function Form7() {
   //                   </TouchableOpacity>
   //                 )}
 
-  //               {isLastQuestion && isLastQuestionSubmitted && (
-  //                 <TouchableOpacity
-  //                   style={styles.submitBtn}
-  //                   onPress={finalSubmitForm}
-  //                 >
-  //                   <Text style={styles.btnText}>फायनल सबमिट</Text>
-  //                 </TouchableOpacity>
-  //               )}
+  //               {isLastQuestion &&
+  //                 isLastQuestionSubmitted &&
+  //                 !isFormFinalSubmitted && (
+  //                   <TouchableOpacity
+  //                     style={styles.submitBtn}
+  //                     onPress={finalSubmitForm}
+  //                   >
+  //                     <Text style={styles.btnText}>फायनल सबमिट</Text>
+  //                   </TouchableOpacity>
+  //                 )}
 
   //               {activeStepIndex < totalSteps - 1 && (
   //                 <TouchableOpacity style={styles.nextBtn} onPress={handleNext}>
   //                   <Text style={styles.btnText}>पुढे</Text>
   //                 </TouchableOpacity>
   //               )}
-  //             </View>
+  //             </View> */}
   //           </>
   //         )}
   //       </View>
-  //       <Modal
-  //         visible={previewVisible}
-  //         animationType="slide"
-  //         onRequestClose={() => setPreviewVisible(false)}
-  //       >
-  //         <View style={{ flex: 1 }}>
-  //           <View
-  //             style={{
-  //               height: 50,
-  //               flexDirection: 'row',
-  //               justifyContent: 'space-between',
-  //               alignItems: 'center',
-  //               paddingHorizontal: 15,
-  //               backgroundColor: '#fff',
-  //             }}
-  //           >
-  //             <Text
-  //               style={{
-  //                 fontSize: 16,
-  //                 fontWeight: 'bold',
-  //                 flex: 1,
-  //               }}
-  //               numberOfLines={1}
-  //             >
-  //               {previewFileName}
-  //             </Text>
 
-  //             <TouchableOpacity onPress={() => setPreviewVisible(false)}>
-  //               <Text style={{ color: 'red' }}>Close</Text>
+  //       <View style={styles.btnWrapper}>
+  //         {/* Row 1: Actions (Save Step & Final Submit) */}
+  //         <View style={styles.btnRow}>
+  //           {!isFormFinalSubmitted && (
+  //             <TouchableOpacity
+  //               style={[styles.btn, styles.submitBtn]}
+  //               onPress={handleSubmit}
+  //               activeOpacity={0.8}
+  //             >
+  //               <Text style={styles.btnText}>सबमिट</Text>
   //             </TouchableOpacity>
-  //           </View>
+  //           )}
 
-  //           {isPdf ? (
-  //             <Pdf
-  //               source={{ uri: previewUrl }}
-  //               style={{ flex: 1 }}
-  //               trustAllCerts={false}
-  //             />
-  //           ) : isImage ? (
-  //             <Image
-  //               source={{ uri: previewUrl }}
-  //               style={{ flex: 1 }}
-  //               resizeMode="contain"
-  //             />
-  //           ) : (
-  //             <View
-  //               style={{
-  //                 flex: 1,
-  //                 justifyContent: 'center',
-  //                 alignItems: 'center',
-  //               }}
+  //           {allStepsSubmitted && !isFormFinalSubmitted && (
+  //             <TouchableOpacity
+  //               style={[styles.btn, styles.finalSubmitBtn]}
+  //               onPress={finalSubmitForm}
+  //               activeOpacity={0.8}
   //             >
-  //               <Text>Preview not available.</Text>
-  //             </View>
+  //               <Text style={styles.btnText}>फायनल सबमिट</Text>
+  //             </TouchableOpacity>
   //           )}
   //         </View>
-  //       </Modal>
+
+  //         {/* Row 2: Step Navigation (Previous & Next) */}
+  //         {(activeStepIndex > 0 || activeStepIndex < totalSteps - 1) && (
+  //           <View style={styles.btnRow}>
+  //             {activeStepIndex > 0 ? (
+  //               <TouchableOpacity
+  //                 style={[styles.btn, styles.navBtn, styles.prevBtn]}
+  //                 onPress={handlePrev}
+  //                 activeOpacity={0.8}
+  //               >
+  //                 <Text style={styles.prevBtnText}>मागील</Text>
+  //               </TouchableOpacity>
+  //             ) : (
+  //               <View style={styles.placeholder} />
+  //             )}
+
+  //             {activeStepIndex < totalSteps - 1 ? (
+  //               <TouchableOpacity
+  //                 style={[styles.btn, styles.navBtn, styles.nextBtn]}
+  //                 onPress={handleNext}
+  //                 activeOpacity={0.8}
+  //               >
+  //                 <Text style={styles.btnText}>पुढे</Text>
+  //               </TouchableOpacity>
+  //             ) : (
+  //               <View style={styles.placeholder} />
+  //             )}
+  //           </View>
+  //         )}
+  //       </View>
   //     </ScrollView>
+  //     <Modal
+  //       visible={previewVisible}
+  //       animationType="slide"
+  //       onRequestClose={() => setPreviewVisible(false)}
+  //     >
+  //       <View style={{ flex: 1 }}>
+  //         <View
+  //           style={{
+  //             height: 50,
+  //             flexDirection: 'row',
+  //             justifyContent: 'space-between',
+  //             alignItems: 'center',
+  //             paddingHorizontal: 15,
+  //             backgroundColor: '#fff',
+  //           }}
+  //         >
+  //           <Text
+  //             style={{
+  //               fontSize: 16,
+  //               fontWeight: 'bold',
+  //               flex: 1,
+  //             }}
+  //             numberOfLines={1}
+  //           >
+  //             {previewFileName}
+  //           </Text>
+
+  //           <TouchableOpacity onPress={() => setPreviewVisible(false)}>
+  //             <Text style={{ color: 'red' }}>Close</Text>
+  //           </TouchableOpacity>
+  //         </View>
+
+  //         {isPdf ? (
+  //           <Pdf
+  //             source={{ uri: previewUrl }}
+  //             style={{ flex: 1 }}
+  //             trustAllCerts={false}
+  //           />
+  //         ) : isImage ? (
+  //           <Image
+  //             source={{ uri: previewUrl }}
+  //             style={{ flex: 1 }}
+  //             resizeMode="contain"
+  //           />
+  //         ) : (
+  //           <View
+  //             style={{
+  //               flex: 1,
+  //               justifyContent: 'center',
+  //               alignItems: 'center',
+  //             }}
+  //           >
+  //             <Text>Preview not available.</Text>
+  //           </View>
+  //         )}
+  //       </View>
+  //     </Modal>
 
   //     {showDatePicker && (
   //       <DateTimePicker
@@ -3828,7 +5639,7 @@ export default function Form7() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.progressCard}>
+        {/* <View style={styles.progressCard}>
           <View style={styles.progressHeader}>
             <View>
               <Text style={styles.progressLabel}>Form Progress</Text>
@@ -3867,22 +5678,17 @@ export default function Form7() {
                       style={[
                         styles.stepCircle,
                         isCompleted && styles.completedStepCircle,
-                        isActive && styles.activeStepCircle,
+                        isActive && styles.currentStepBorder,
                       ]}
                     >
-                      {isCompleted && !isActive ? (
-                        <Icon name="check" size={18} color="#FFFFFF" />
-                      ) : (
-                        <Text
-                          style={[
-                            styles.stepText,
-                            isCompleted && styles.completedStepText,
-                            isActive && styles.activeStepText,
-                          ]}
-                        >
-                          {step.srNo}
-                        </Text>
-                      )}
+                      <Text
+                        style={[
+                          styles.stepText,
+                          isCompleted && styles.completedStepText,
+                        ]}
+                      >
+                        {step.srNo}
+                      </Text>
                     </View>
                   </TouchableOpacity>
 
@@ -3898,23 +5704,16 @@ export default function Form7() {
               );
             })}
           </ScrollView>
-        </View>
+        </View> */}
+
+        <View style={styles.progressCard}>{renderProgress()}</View>
 
         <View style={styles.questionHeader}>
           <Text style={styles.formNumberText}>FORM {formNo}</Text>
-
-          {/* <Text style={styles.questionHeaderTitle}>
-            {activeQuestionName || 'प्रश्न'}
-          </Text> */}
         </View>
 
         <View style={styles.card}>
           <View style={styles.cardTopSection}>
-
-            {/* <View style={styles.cardIconContainer}>
-              <Icon name="clipboard-text-outline" size={25} color="#0B63B6" />
-            </View> */}
-
             <View style={styles.cardHeadingContainer}>
               <Text style={styles.heading}>
                 {`${formNo}.${currentQuestionNumber}: ${
@@ -3933,7 +5732,6 @@ export default function Form7() {
           {loadingDetails ? (
             <View style={styles.questionLoaderContainer}>
               <ActivityIndicator size="large" color="#0B63B6" />
-
               <Text style={styles.questionLoaderText}>
                 प्रश्नाची माहिती लोड होत आहे...
               </Text>
@@ -4007,68 +5805,165 @@ export default function Form7() {
 
               <View style={styles.buttonDivider} />
 
-              <View style={styles.btnRow}>
-                {activeStepIndex > 0 && (
-                  <TouchableOpacity
-                    style={styles.secondaryButton}
-                    activeOpacity={0.8}
-                    onPress={handlePrev}
-                  >
-                    <Icon name="arrow-left" size={20} color="#0B63B6" />
-
-                    <Text style={styles.secondaryButtonText}>मागील</Text>
-                  </TouchableOpacity>
-                )}
-
-                {!isFinalSubmitted &&
-                  !(isLastQuestion && isLastQuestionSubmitted) && (
+              <View style={styles.btnWrapper}>
+                <View style={styles.btnRow}>
+                  {!isFormFinalSubmitted && (
                     <TouchableOpacity
-                      style={styles.saveButton}
-                      activeOpacity={0.8}
+                      style={[styles.btn, styles.submitBtn]}
                       onPress={handleSubmit}
+                      activeOpacity={0.8}
                     >
-                      <Icon
-                        name="content-save-check-outline"
-                        size={20}
-                        color="#FFFFFF"
-                      />
-
-                      <Text style={styles.primaryButtonText}>सबमिट</Text>
+                      <Text style={styles.btnText}>सबमिट</Text>
                     </TouchableOpacity>
                   )}
 
-                {isLastQuestion && isLastQuestionSubmitted && (
-                  <TouchableOpacity
-                    style={styles.finalSubmitButton}
-                    activeOpacity={0.8}
-                    onPress={finalSubmitForm}
-                  >
-                    <Icon
-                      name="check-decagram-outline"
-                      size={20}
-                      color="#FFFFFF"
-                    />
+                  {allStepsSubmitted && !isFormFinalSubmitted && (
+                    <TouchableOpacity
+                      style={[styles.btn, styles.finalSubmitBtn]}
+                      onPress={finalSubmitForm}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.btnText}>फायनल सबमिट</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
 
-                    <Text style={styles.primaryButtonText}>फायनल सबमिट</Text>
-                  </TouchableOpacity>
-                )}
+                {(activeStepIndex > 0 || activeStepIndex < totalSteps - 1) && (
+                  <View style={styles.btnRow}>
+                    {activeStepIndex > 0 ? (
+                      <TouchableOpacity
+                        style={[styles.btn, styles.navBtn, styles.prevBtn]}
+                        onPress={handlePrev}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.prevBtnText}>मागील</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={styles.placeholder} />
+                    )}
 
-                {activeStepIndex < totalSteps - 1 && (
-                  <TouchableOpacity
-                    style={styles.nextButton}
-                    activeOpacity={0.8}
-                    onPress={handleNext}
-                  >
-                    <Text style={styles.primaryButtonText}>पुढे</Text>
-
-                    <Icon name="arrow-right" size={20} color="#FFFFFF" />
-                  </TouchableOpacity>
+                    {activeStepIndex < totalSteps - 1 ? (
+                      <TouchableOpacity
+                        style={[styles.btn, styles.navBtn, styles.nextBtn]}
+                        onPress={handleNext}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.btnText}>पुढे</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={styles.placeholder} />
+                    )}
+                  </View>
                 )}
               </View>
             </>
           )}
         </View>
       </ScrollView>
+
+      {showDatePicker && (
+        <DateTimePicker
+          value={new Date()}
+          mode="date"
+          display="default"
+          onChange={(event, selectedDate) => {
+            setShowDatePicker(false);
+            if (event.type === 'dismissed') {
+              return;
+            }
+
+            if (!selectedDate || !selectedDateKey) {
+              return;
+            }
+
+            const minDate = new Date(2025, 9, 17);
+            const maxDate = new Date(2026, 3, 31);
+
+            if (selectedDate < minDate || selectedDate > maxDate) {
+              Alert.alert(
+                'Information',
+                'कृपया १७-०९-२०२५ ते ३१-०३-२०२६ या दरम्यानची तारीख निवडा.',
+              );
+              return;
+            }
+
+            const day = String(selectedDate.getDate()).padStart(2, '0');
+            const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+            const year = selectedDate.getFullYear();
+            const formattedDate = `${day}-${month}-${year}`;
+
+            setAnswers(prev => ({
+              ...prev,
+              [selectedDateKey.key]: {
+                ...prev[selectedDateKey.key],
+                value: formattedDate,
+                QuestionId: selectedDateKey.questionId,
+                ElementMasterId: selectedDateKey.elementMasterId,
+                TableMstID: selectedDateKey.tableMstID,
+                //TableMstID: rowTableMstID,
+                FormNoVal: 7,
+                IsFromMobileApp: 1,
+                isEdited: true,
+              },
+            }));
+          }}
+        />
+      )}
+
+      <Modal
+        visible={previewImage !== null}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setPreviewImage(null)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.95)',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
+          {/* CLOSE */}
+          <TouchableOpacity
+            onPress={() => setPreviewImage(null)}
+            activeOpacity={0.8}
+            style={{
+              position: 'absolute',
+              top: 45,
+              right: 20,
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: 'rgba(255,255,255,0.2)',
+              justifyContent: 'center',
+              alignItems: 'center',
+              zIndex: 10,
+            }}
+          >
+            <Text
+              style={{
+                color: '#FFFFFF',
+                fontSize: 28,
+                lineHeight: 30,
+              }}
+            >
+              ×
+            </Text>
+          </TouchableOpacity>
+
+          {previewImage && (
+            <Image
+              source={{ uri: previewImage }}
+              style={{
+                width: '95%',
+                height: '80%',
+              }}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      </Modal>
 
       <Modal
         visible={previewVisible}
@@ -4124,6 +6019,23 @@ export default function Form7() {
           )}
         </View>
       </Modal>
+      <CustomAlert
+        visible={alertVisible}
+        type={alertType}
+        title={alertTitle}
+        message={alertMessage}
+        onClose={() => setAlertVisible(false)}
+      />
+
+      {isProcessingImage && (
+        <View style={styles.loaderOverlay1}>
+          <View style={styles.loaderBox1}>
+            <ActivityIndicator size="large" color="#0B63B6" />
+
+            <Text style={styles.loaderText}>Loading...</Text>
+          </View>
+        </View>
+      )}
 
       {loading && (
         <View style={styles.loaderOverlay}>
@@ -4139,11 +6051,88 @@ export default function Form7() {
 }
 
 // const styles = StyleSheet.create({
+//   stepContainer: {
+//     flexDirection: 'row',
+//     justifyContent: 'center',
+//     paddingVertical: 15,
+//     backgroundColor: '#e8e8e8',
+//     paddingHorizontal: 8,
+//   },
+//   btnWrapper: {
+//     width: '100%',
+//     paddingHorizontal: 16,
+//     marginVertical: 16,
+//     gap: 10, // vertical spacing between rows
+//   },
+//   btnRow: {
+//     flexDirection: 'row',
+//     alignItems: 'center',
+//     justifyContent: 'space-between',
+//     gap: 10,
+//     width: '100%',
+//   },
+//   btn: {
+//     flex: 1,
+//     paddingVertical: 13,
+//     paddingHorizontal: 8,
+//     borderRadius: 8,
+//     alignItems: 'center',
+//     justifyContent: 'center',
+//     minHeight: 46,
+//   },
+//   placeholder: {
+//     flex: 1,
+//   },
 
-//     tableScrollWrapper: {
-//       width: '100%',
-//       overflow: 'hidden',
-//     },
+//   saveBtn: {
+//     backgroundColor: '#0B4FA3',
+//   },
+//   finalSubmitBtn: {
+//     backgroundColor: '#1B8F4D',
+//   },
+//   navBtn: {
+//     backgroundColor: '#0B4FA3',
+//   },
+//   submitBtn: {
+//     backgroundColor: 'rgb(236, 190, 62)',
+//   },
+//   prevBtn: {
+//     backgroundColor: '#EAEAEA',
+//     borderWidth: 1,
+//     borderColor: '#CCCCCC',
+//   },
+//   nextBtn: {
+//     backgroundColor: '#0B4FA3',
+//   },
+
+//   btnText: {
+//     color: '#FFFFFF',
+//     fontSize: 15,
+//     fontWeight: '600',
+//     textAlign: 'center',
+//   },
+//   prevBtnText: {
+//     color: '#333333',
+//     fontSize: 15,
+//     fontWeight: '600',
+//     textAlign: 'center',
+//   },
+
+//   finalsubmitBtn: {
+//     backgroundColor: '#1b8f4d',
+//     padding: 15,
+//     borderRadius: 10,
+//     alignItems: 'center',
+//   },
+//   submitText: {
+//     color: 'white',
+//     fontSize: 16,
+//     fontWeight: '600',
+//   },
+//   tableScrollWrapper: {
+//     width: '100%',
+//     overflow: 'hidden',
+//   },
 
 //   deleteBtn: {
 //     width: 'auto',
@@ -4179,12 +6168,12 @@ export default function Form7() {
 //   },
 
 //   // Steps
-//   stepContainer: {
-//     flexDirection: 'row',
-//     justifyContent: 'center',
-//     paddingVertical: 15,
-//     backgroundColor: '#e8e8e8',
-//   },
+//   // stepContainer: {
+//   //   flexDirection: 'row',
+//   //   justifyContent: 'center',
+//   //   paddingVertical: 15,
+//   //   backgroundColor: '#e8e8e8',
+//   // },
 //   stepCircle: {
 //     width: 30,
 //     height: 30,
@@ -4272,36 +6261,42 @@ export default function Form7() {
 //     marginTop: 10,
 //   },
 
-//   submitBtn: {
-//     backgroundColor: '#1b8f4d',
-//     padding: 15,
-//     borderRadius: 10,
-//     marginTop: 25,
-//     alignItems: 'center',
-//   },
-//   submitText: { color: 'white', fontSize: 16, fontWeight: '600' },
-//   btnRow: {
-//     flexDirection: 'row',
-//     justifyContent: 'space-between',
-//     marginVertical: 15,
-//   },
-//   nextBtn: {
-//     backgroundColor: '#0B4FA3',
-//     paddingVertical: 10,
-//     paddingHorizontal: 25,
-//     borderRadius: 10,
-//   },
-//   prevBtn: {
-//     backgroundColor: '#0B4FA3',
-//     paddingVertical: 10,
-//     paddingHorizontal: 25,
-//     borderRadius: 10,
-//   },
-//   btnText: {
-//     color: '#fff',
-//     fontSize: 16,
-//     fontWeight: '600',
-//   },
+//   // submitBtn: {
+//   //   backgroundColor: '#1b8f4d',
+//   //   padding: 15,
+//   //   borderRadius: 10,
+//   //   alignItems: 'center',
+//   // },
+//   // submitText: {
+//   //   color: 'white',
+//   //   fontSize: 16,
+//   //   fontWeight: '600',
+//   // },
+//   // btnRow: {
+//   //   flexDirection: 'row',
+//   //   justifyContent: 'space-between',
+//   //   marginVertical: 15,
+//   //   alignItems: 'center',
+//   //   width: '100%',
+//   // },
+//   // nextBtn: {
+//   //   backgroundColor: '#0B4FA3',
+//   //   paddingVertical: 15,
+//   //   paddingHorizontal: 25,
+//   //   borderRadius: 10,
+//   // },
+
+//   // prevBtn: {
+//   //   backgroundColor: '#0B4FA3',
+//   //   paddingVertical: 15,
+//   //   paddingHorizontal: 25,
+//   //   borderRadius: 10,
+//   // },
+//   // btnText: {
+//   //   color: '#fff',
+//   //   fontSize: 16,
+//   //   fontWeight: '600',
+//   // },
 //   tableContainer: {
 //     borderWidth: 1,
 //     borderColor: '#ddd',
@@ -4413,6 +6408,305 @@ const COLORS = {
 };
 
 const styles = StyleSheet.create({
+  progressCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#E5EAE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#CBD6E0',
+  },
+
+  progressCircleCompleted: {
+    backgroundColor: COLORS.completed,
+    borderColor: COLORS.completed,
+  },
+
+  progressCircleActive: {
+    borderColor: '#1976D2',
+    borderWidth: 2,
+  },
+
+  progressText: {
+    color: '#65716B',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  progressTextCompleted: {
+    color: '#FFFFFF',
+  },
+
+  progressLine: {
+    width: 19,
+    height: 2,
+    backgroundColor: '#D7E0E8',
+  },
+
+  progressLineCompleted: {
+    backgroundColor: COLORS.completed,
+  },
+
+  progressTextActive: {
+    color: '#FFFFFF',
+  },
+
+  progressCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    marginTop: 14,
+    paddingVertical: 17,
+
+    elevation: 2,
+
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+  },
+  loaderOverlay1: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 9999,
+    elevation: 9999,
+  },
+
+  loaderBox1: {
+    width: 135,
+    minHeight: 115,
+    borderRadius: 17,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+  },
+
+  loaderText1: {
+    marginTop: 12,
+    color: '#FFFFFF',
+    fontSize: 15,
+    textAlign: 'center',
+  },
+  currentStepBorder: {
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+  },
+  formNumberText: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    paddingLeft: 10,
+  },
+
+  card: {
+    backgroundColor: COLORS.card,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
+    elevation: 1,
+  },
+
+  heading: {
+    color: COLORS.textPrimary,
+    fontSize: 15,
+    lineHeight: 24,
+    fontWeight: '700',
+  },
+  cardDivider: {
+    height: 1,
+    backgroundColor: '#E4E9E6',
+    marginTop: 10,
+  },
+
+  fieldWrapper: {
+    marginTop: 15,
+  },
+  controlContainer: {
+    marginLeft: 20,
+  },
+
+  input: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: COLORS.inputBackground,
+    color: COLORS.textPrimary,
+    fontSize: 14,
+  },
+
+  dropdown: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    backgroundColor: COLORS.inputBackground,
+  },
+
+  buttonDivider: {
+    height: 1,
+    backgroundColor: '#E4E9E6',
+    marginTop: 20,
+    marginBottom: 10,
+  },
+
+  secondaryButton: {
+    minHeight: 48,
+    paddingHorizontal: 14,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  secondaryButtonText: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+
+  saveButton: {
+    flex: 1,
+    minHeight: 48,
+    paddingHorizontal: 14,
+    borderRadius: 11,
+    backgroundColor: COLORS.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  nextButton: {
+    flex: 1,
+    minHeight: 48,
+    paddingHorizontal: 14,
+    borderRadius: 11,
+    backgroundColor: COLORS.primaryDark,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  finalSubmitButton: {
+    flex: 1,
+    minHeight: 48,
+    paddingHorizontal: 14,
+    borderRadius: 11,
+    backgroundColor: COLORS.completed,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginHorizontal: 6,
+  },
+
+  previewFileName: {
+    flex: 1,
+    color: COLORS.textPrimary,
+    fontSize: 14,
+    fontWeight: '600',
+    marginHorizontal: 11,
+  },
+
+  previewUnavailableTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 13,
+  },
+
+  btnWrapper: {
+    width: '100%',
+    paddingHorizontal: 16,
+    marginVertical: 16,
+    gap: 10,
+  },
+  btnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    width: '100%',
+  },
+  btn: {
+    flex: 1,
+    paddingVertical: 13,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 46,
+  },
+  placeholder: {
+    flex: 1,
+  },
+
+  saveBtn: {
+    backgroundColor: '#0B4FA3',
+  },
+  finalSubmitBtn: {
+    backgroundColor: '#1B8F4D',
+  },
+  navBtn: {
+    backgroundColor: '#0B4FA3',
+  },
+  submitBtn: {
+    backgroundColor: 'rgb(236, 190, 62)',
+  },
+  prevBtn: {
+    backgroundColor: '#EAEAEA',
+    borderWidth: 1,
+    borderColor: '#CCCCCC',
+  },
+  nextBtn: {
+    backgroundColor: '#0B4FA3',
+  },
+
+  btnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  prevBtnText: {
+    color: '#333333',
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+
+  finalsubmitBtn: {
+    backgroundColor: '#1b8f4d',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  submitText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   deleteBtn: {
     width: 'auto',
     justifyContent: 'center',
@@ -4448,8 +6742,6 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 50,
   },
-
-  /* ================= HEADER ================= */
 
   toolbar: {
     minHeight: 94,
@@ -4488,22 +6780,25 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  /* ================= PROGRESS ================= */
+  // progressCard: {
+  //   backgroundColor: COLORS.card,
+  //   borderRadius: 16,
+  //   paddingHorizontal: 14,
+  //   paddingVertical: 15,
 
-  progressCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 15,
+  //   elevation: 3,
+  //   shadowColor: '#000000',
+  //   shadowOpacity: 0.08,
+  //   shadowRadius: 8,
+  //   shadowOffset: {
+  //     width: 0,
+  //     height: 3,
+  //   },
+  // },
 
-    elevation: 3,
-    shadowColor: '#000000',
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
+   progressContainer: {
+    paddingHorizontal: 16,
+    alignItems: 'center',
   },
 
   progressHeader: {
@@ -4597,18 +6892,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.completed,
   },
 
-  /* ================= QUESTION HEADER ================= */
-
   questionHeader: {
     marginTop: 22,
     marginBottom: 13,
-  },
-
-  formNumberText: {
-    color: COLORS.primary,
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 0.5,
   },
 
   questionHeaderTitle: {
@@ -4617,25 +6903,6 @@ const styles = StyleSheet.create({
     lineHeight: 29,
     fontWeight: '700',
     marginTop: 4,
-  },
-
-  /* ================= CARD ================= */
-
-  card: {
-    backgroundColor: COLORS.card,
-    borderRadius: 18,
-    paddingHorizontal: 15,
-    paddingTop: 17,
-    paddingBottom: 18,
-
-    elevation: 3,
-    shadowColor: '#000000',
-    shadowOpacity: 0.08,
-    shadowRadius: 9,
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
   },
 
   cardTopSection: {
@@ -4657,30 +6924,10 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
 
-  heading: {
-    color: COLORS.textPrimary,
-    fontSize: 17,
-    lineHeight: 24,
-    fontWeight: '700',
-  },
-
   cardDescription: {
     color: COLORS.textSecondary,
     fontSize: 11,
     marginTop: 4,
-  },
-
-  cardDivider: {
-    height: 1,
-    backgroundColor: '#E4E9E6',
-    marginTop: 17,
-    marginBottom: 5,
-  },
-
-  /* ================= FIELD ================= */
-
-  fieldWrapper: {
-    marginTop: 20,
   },
 
   fieldLabelRow: {
@@ -4714,38 +6961,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  controlContainer: {
-    marginLeft: 35,
-  },
-
-  input: {
-    minHeight: 52,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: COLORS.inputBackground,
-    color: COLORS.textPrimary,
-    fontSize: 14,
-  },
-
-  dropdown: {
-    minHeight: 52,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    backgroundColor: COLORS.inputBackground,
-  },
-
   disabledInput: {
     backgroundColor: COLORS.disabledBackground,
     borderColor: '#DCE3DF',
     color: '#818B86',
   },
-
-  /* ================= CHECKBOX ================= */
 
   checkboxRow: {
     minHeight: 46,
@@ -4766,8 +6986,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginLeft: 10,
   },
-
-  /* ================= FILE ================= */
 
   fileRow: {
     minHeight: 67,
@@ -4843,8 +7061,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
 
-  /* ================= TABLE ================= */
-
   tableContainer: {
     marginVertical: 10,
     borderWidth: 1,
@@ -4916,97 +7132,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  /* ================= BUTTONS ================= */
-
-  buttonDivider: {
-    height: 1,
-    backgroundColor: '#E4E9E6',
-    marginTop: 28,
-    marginBottom: 17,
-  },
-
-  btnRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-  },
-
-  secondaryButton: {
-    minHeight: 48,
-    paddingHorizontal: 14,
-    borderRadius: 11,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    backgroundColor: '#FFFFFF',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  secondaryButtonText: {
-    color: COLORS.primary,
-    fontSize: 14,
-    fontWeight: '700',
-    marginLeft: 6,
-  },
-
-  saveButton: {
-    flex: 1,
-    minHeight: 48,
-    paddingHorizontal: 14,
-    borderRadius: 11,
-    backgroundColor: COLORS.primary,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  nextButton: {
-    flex: 1,
-    minHeight: 48,
-    paddingHorizontal: 14,
-    borderRadius: 11,
-    backgroundColor: COLORS.primaryDark,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  finalSubmitButton: {
-    flex: 1,
-    minHeight: 50,
-    paddingHorizontal: 14,
-    borderRadius: 11,
-    backgroundColor: COLORS.completed,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-    marginHorizontal: 6,
-  },
-
-  submitBtn: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: 11,
-    backgroundColor: COLORS.completed,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  submitText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-
-  /* ================= LOADER ================= */
-
   questionLoaderContainer: {
     minHeight: 220,
     alignItems: 'center',
@@ -5044,8 +7169,6 @@ const styles = StyleSheet.create({
     marginTop: 11,
   },
 
-  /* ================= PREVIEW ================= */
-
   previewContainer: {
     flex: 1,
     backgroundColor: '#F3F5F4',
@@ -5071,14 +7194,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  previewFileName: {
-    flex: 1,
-    color: COLORS.textPrimary,
-    fontSize: 15,
-    fontWeight: '700',
-    marginHorizontal: 11,
-  },
-
   previewCloseButton: {
     width: 39,
     height: 39,
@@ -5097,13 +7212,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 30,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-
-  previewUnavailableTitle: {
-    color: COLORS.textPrimary,
-    fontSize: 17,
-    fontWeight: '700',
-    marginTop: 13,
   },
 
   previewUnavailableText: {

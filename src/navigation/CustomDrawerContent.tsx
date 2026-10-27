@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable react/no-unstable-nested-components */
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
@@ -25,14 +26,14 @@ const CustomDrawerContent = (props: any) => {
         onPress={() => navigation.navigate('मुख्यपृष्ठ')}
       />
 
-      {/* DASHBOARD */}
-      <DrawerItem
+     
+      {/* <DrawerItem
         label="डॅशबोर्ड"
         icon={({ size }) => (
           <Icon name="view-dashboard-outline" size={size} color="#64748B" />
         )}
         onPress={() => navigation.navigate('डॅशबोर्ड')}
-      />
+      /> */}
 
       {/* PROFILE */}
       <DrawerItem
@@ -52,8 +53,7 @@ const CustomDrawerContent = (props: any) => {
         onPress={() => navigation.navigate('पासवर्ड बदला')}
       />
 
-      {/* REPORT */}
-      <TouchableOpacity
+      {/* <TouchableOpacity
         style={drawerStyles.reportMenu}
         activeOpacity={0.7}
         onPress={() => setReportExpanded(prev => !prev)}
@@ -69,7 +69,7 @@ const CustomDrawerContent = (props: any) => {
           size={22}
           color="#64748B"
         />
-      </TouchableOpacity>
+      </TouchableOpacity> */}
 
       {reportExpanded && (
         <View style={drawerStyles.subMenuContainer}>
@@ -135,13 +135,13 @@ const CustomDrawerContent = (props: any) => {
         </View>
       )}
 
-      <DrawerItem
+      {/* <DrawerItem
         label="साप्ताहिक अहवाल"
         icon={({ size }) => (
           <Icon name="file-document-edit-outline" size={size} color="#64748B" />
         )}
         onPress={() => navigation.navigate('साप्ताहिक अहवाल')}
-      />
+      /> */}
 
       {/* LOGOUT */}
       <DrawerItem

@@ -25,6 +25,8 @@ import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import FileViewer from 'react-native-file-viewer';
 import Pdf from 'react-native-pdf';
+import CustomAlert, { AlertType } from '../utils/CustomAlert';
+import {API_BASE_URL} from '../utils/api';
 
 interface Step {
   srNo: number;
@@ -44,10 +46,26 @@ export default function Form2() {
   // Steps / questions
   // const [steps, setSteps] = useState<number[]>([]);
 
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertType, setAlertType] = useState<AlertType>('info');
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
+
+  const showCustomAlert = (
+    type: AlertType,
+    message: string,
+    title?: string,
+  ) => {
+    setAlertType(type);
+    setAlertTitle(title || '');
+    setAlertMessage(message);
+    setAlertVisible(true);
+  };
+
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewUrl, setPreviewUrl] = useState('');
   const [previewFileName, setPreviewFileName] = useState('');
-
+  const [isWebFinalSubmitted, setIsWebFinalSubmitted] = useState(false);
   const [steps, setSteps] = useState<Step[]>([]);
 
   const [questions, setQuestions] = useState<any[]>([]);
@@ -152,7 +170,41 @@ export default function Form2() {
     setDisabledElements(initialDisabled);
 
     console.log('✅ INITIAL DISABLED ELEMENTS LOADED', initialDisabled);
-  }, [answers]); // depend on answers to run after API prefill
+  }, [answers]);
+
+  useEffect(() => {
+    if (steps && steps.length > 0) {
+      const prefilledIndices = steps
+        .map((step: Step, index: number) => (step.anssum > 0 ? index : null))
+        .filter((index): index is number => index !== null);
+
+      setSubmittedSteps(prev =>
+        Array.from(new Set([...prev, ...prefilledIndices])),
+      );
+    }
+  }, [steps]);
+
+  useEffect(() => {
+    checkFinalSubmitStatus();
+  }, []);
+
+  useEffect(() => {
+    console.log('submittedSteps updated:', submittedSteps);
+  }, [submittedSteps]);
+
+  const checkFinalSubmitStatus = async () => {
+    try {
+      const status = await AsyncStorage.getItem(
+        `form2_final_submitted_${userID}`,
+      );
+
+      if (status === '1') {
+        setIsFinalSubmitted(true);
+      }
+    } catch (error) {
+      console.log('Error checking final submit status:', error);
+    }
+  };
 
   const isDisabled = (elementMstId: string | number) => {
     const elId = String(elementMstId);
@@ -208,9 +260,9 @@ export default function Form2() {
     loadCounts();
   }, []);
 
-  useEffect(() => {
-    console.log('📌 Current answers state:', answers);
-  }, [answers]);
+  // useEffect(() => {
+  //   console.log('📌 Current answers state:', answers);
+  // }, [answers]);
 
   useEffect(() => {
     const activeQuestion = questions[activeStepIndex];
@@ -219,7 +271,7 @@ export default function Form2() {
     if (!questionId) return;
     if (!questionDetails?.length) return;
 
-    console.log('🔁 Replaying dropdown dependencies', { questionId });
+    // console.log('🔁 Replaying dropdown dependencies', { questionId });
 
     questionDetails.forEach(item => {
       // only dropdowns
@@ -229,11 +281,11 @@ export default function Form2() {
       const mapKey = `${questionId}_${elementMstId}`;
       const selectedValue = answers[mapKey]?.value;
 
-      console.log('🔍 Dependency replay', {
-        mapKey,
-        elementMstId,
-        selectedValue,
-      });
+      // console.log('🔍 Dependency replay', {
+      //   mapKey,
+      //   elementMstId,
+      //   selectedValue,
+      // });
 
       if (
         selectedValue !== null &&
@@ -296,11 +348,11 @@ export default function Form2() {
       !questionDetails?.length ||
       villageCountFilled.current
     ) {
-      console.log('⏭️ Skipping auto-fill villagePeopleCount:', {
-        villagePeopleCount,
-        questionDetailsLength: questionDetails?.length,
-        alreadyFilled: villageCountFilled.current,
-      });
+      // console.log('⏭️ Skipping auto-fill villagePeopleCount:', {
+      //   villagePeopleCount,
+      //   questionDetailsLength: questionDetails?.length,
+      //   alreadyFilled: villageCountFilled.current,
+      // });
       return;
     }
 
@@ -333,6 +385,18 @@ export default function Form2() {
     villageCountFilled.current = true;
   }, [villagePeopleCount, questionDetails]);
 
+  useEffect(() => {
+    if (steps && steps.length > 0) {
+      const prefilledIndices = steps
+        .map((step: Step, index: number) => (step.anssum > 0 ? index : null))
+        .filter((index): index is number => index !== null);
+
+      setSubmittedSteps(prev =>
+        Array.from(new Set([...prev, ...prefilledIndices])),
+      );
+    }
+  }, [steps]);
+
   interface IDropdownItem {
     ddtext: string;
     ddid: number | string;
@@ -363,8 +427,10 @@ export default function Form2() {
   const fetchSteps = async (userId: string, bearerToken: string) => {
     setLoading(true);
     try {
+      const url = `${API_BASE_URL}/Form1QuestionMaster/GetForm1QuestionMaster`;
+
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/GetForm1QuestionMaster',
+        url,
         {
           method: 'POST',
           headers: {
@@ -385,6 +451,13 @@ export default function Form2() {
 
       if (data && data.responseCode === 2000 && data.items) {
         setQuestions(data.items);
+
+        const webSubmitted = data.items?.some(
+          (item: { isfromfinalsubmitflag: any }) =>
+            Number(item.isfromfinalsubmitflag) === 1,
+        );
+
+        setIsWebFinalSubmitted(webSubmitted);
 
         // ✅ store full object
         const stepsArray: Step[] = data.items.map((item: any) => ({
@@ -418,8 +491,10 @@ export default function Form2() {
     setLoadingDetails(true);
 
     try {
+      const url = `${API_BASE_URL}/Form1QuestionMaster/GetForm1QuestionByID`;
+
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/GetForm1QuestionByID',
+        url,
         {
           method: 'POST',
           headers: {
@@ -459,8 +534,6 @@ export default function Form2() {
           const rdDownloadAhvalNamuna = it.rdDownloadAhvalNamuna;
 
           //    console.log('rdformtextboxsubmitval', rdformtextboxsubmitval);
-
-          console.log('rdtableelementid:', rdtableelementid);
 
           // Initialize answers (unchanged)
           if (!updatedAnswers[key]) {
@@ -721,8 +794,10 @@ export default function Form2() {
     mapKey: string,
   ) => {
     try {
+      const url = `${API_BASE_URL}/Form1QuestionMaster/GetForm1DropDownValues`;
+
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/GetForm1DropDownValues',
+        url,
         {
           method: 'POST',
           headers: {
@@ -814,8 +889,10 @@ export default function Form2() {
         selectedDdValue,
       });
 
+      const url = `${API_BASE_URL}/Form1QuestionMaster/GetForm1DropDownDependElement`;
+
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/GetForm1DropDownDependElement',
+        url,
         {
           method: 'POST',
           headers: {
@@ -888,8 +965,10 @@ export default function Form2() {
     const mapKey = `${questionId}_${elementMstId}`;
 
     try {
+      const url = `${API_BASE_URL}/Form1QuestionMaster/GetForm1CheckboxValues`;
+
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/GetForm1CheckboxValues',
+        url,
         {
           method: 'POST',
           headers: {
@@ -957,8 +1036,11 @@ export default function Form2() {
     const mapKey = `${questionId}_${elementMstId}_${tableMstId}`;
 
     try {
+
+      const url = `${API_BASE_URL}/Form1QuestionMaster/GetForm1TextBoxValues`;
+
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/GetForm1TextBoxValues',
+        url,
         {
           method: 'POST',
           headers: {
@@ -979,7 +1061,7 @@ export default function Form2() {
       const raw = await res.text();
       const data = safeJsonParse(raw);
 
-      console.log('📥 Raw TextBox API:', data);
+      // console.log('📥 Raw TextBox API:', data);
 
       // ❌ No data
       if (!data || data.responseCode !== 2000 || !Array.isArray(data.items)) {
@@ -1026,7 +1108,7 @@ export default function Form2() {
           TableMstID: tableMstId,
         };
 
-        console.log('📌 Updated answers state:', updated);
+        //console.log('📌 Updated answers state:', updated);
         return updated;
       });
     } catch (err) {
@@ -1055,8 +1137,10 @@ export default function Form2() {
     const mapKey = `${questionId}_${elementMstId}`;
 
     try {
+      const url = `${API_BASE_URL}/Form1QuestionMaster/GetForm1UploadedDocVal`;
+
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/GetForm1UploadedDocVal',
+        url,
         {
           method: 'POST',
           headers: {
@@ -2010,9 +2094,11 @@ export default function Form2() {
       };
       console.log('📤 Final Payload:', JSON.stringify(payload, null, 2));
 
+      const url = `${API_BASE_URL}/Form1QuestionMaster/InserUpdateFormElements`;
+
       // ================= SUBMIT =================
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/InserUpdateFormElements',
+        url,
         {
           method: 'POST',
           headers: {
@@ -2086,26 +2172,32 @@ export default function Form2() {
     }
   };
 
+  const isFormFinalSubmitted = isFinalSubmitted || isWebFinalSubmitted;
+
+  const isStepComplete = (index: number) => {
+    return submittedSteps.includes(index) || (steps[index]?.anssum ?? 0) > 0;
+  };
+
+  const allStepsSubmitted =
+    steps.length > 0 && steps.every((_, index) => isStepComplete(index));
+
   //-------submit end------------
   // ------------------ FINAL SUBMIT FUNCTION ------------------
   const finalSubmitForm = async () => {
     try {
       setLoading(true);
       console.log('🚀 Final Submit initiated');
-
-      // ------------------ 1️⃣ Check missing steps ------------------
       const missingSteps = questions
         .map((q, index) => ({ ...q, index }))
-        .filter(q => !submittedSteps.includes(q.index));
+        .filter(q => !isStepComplete(q.index));
 
       if (missingSteps.length > 0) {
         const missingNumbers = missingSteps.map(s => `Q${s.srNo}`).join(', ');
-        console.log('⚠️ Missing questions:', missingNumbers);
         Alert.alert(
           'Incomplete Form',
           `Please complete the following questions before final submit:\n${missingNumbers}`,
         );
-        return; // stop final submit
+        return;
       }
 
       console.log('✅ All questions submitted, calling final submit API');
@@ -2118,8 +2210,10 @@ export default function Form2() {
       };
       console.log('📤 Final Submit Payload:', payload);
 
+      const url = `${API_BASE_URL}/Form1QuestionMaster/InsertFormFinalSubmit`;
+
       const res = await fetch(
-        'https://CMSPRajAbhiyanAPI.mahaitgov.in/api/Form1QuestionMaster/InsertFormFinalSubmit',
+        url,
         {
           method: 'POST',
           headers: {
@@ -2140,11 +2234,15 @@ export default function Form2() {
         return;
       }
 
-      if (data.items?.[0]?.isForm1Complete === 1) {
+      if (Number(data.items?.[0]?.isForm2Complete) === 1) {
+        await AsyncStorage.setItem(`form2_final_submitted_${userID}`, '1');
         console.log('✅ Final Form marked as complete on server');
         Alert.alert('Success', 'Final Form 2 submitted successfully!');
-        // 🔹 Optionally lock the form or navigate to another screen
         setIsFinalSubmitted(true);
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Home' }],
+        });
       } else {
         console.log('❌ Form not complete on server');
         Alert.alert('Error', 'Form submission incomplete on server');
@@ -2279,10 +2377,6 @@ export default function Form2() {
     return { width: 180 }; // default
   };
 
-  /**
-   * Determines the validation type for a table cell.
-   * Returns 1 (URL), 2 (numeric), 3 (text), 4 (decimal), or undefined.
-   */
   const getTableValidationType = (
     questionId: number,
     elementMstId: string,
@@ -2713,8 +2807,6 @@ export default function Form2() {
                         placeholder = 'Enter Number';
                       }
 
-                      console.log('validationType', validationType);
-
                       const isNumericOnly =
                         validationType === 2 ||
                         validationType === 4 ||
@@ -2865,6 +2957,70 @@ export default function Form2() {
     }
   };
 
+  
+    const renderProgress = () => {
+      return (
+        <>
+          <ScrollView
+            ref={scrollRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.progressContainer}
+          >
+            {steps.map((step: Step, index: number) => {
+              const isActive = index === activeStepIndex;
+              const isSubmitted = submittedSteps.includes(index);
+              const isAnswered = Number(step.anssum || 0) > 0;
+              const isCompleted = isSubmitted || isAnswered;
+  
+              const previousCompleted =
+                index > 0 &&
+                (submittedSteps.includes(index - 1) ||
+                  Number(steps[index - 1]?.anssum || 0) > 0);
+  
+              return (
+                <React.Fragment
+                  key={String(step.questionid ?? step.srNo ?? index)}
+                >
+                  {index !== 0 && (
+                    <View
+                      style={[
+                        styles.progressLine,
+                        previousCompleted && styles.progressLineCompleted,
+                      ]}
+                    />
+                  )}
+  
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => onStepPress(index, step.questionid)}
+                  >
+                    <View
+                      style={[
+                        styles.progressCircle,
+                        isCompleted && styles.progressCircleCompleted,
+                        isActive && styles.progressCircleActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.progressText,
+                          isCompleted && styles.progressTextCompleted,
+                          isActive && styles.progressTextActive,
+                        ]}
+                      >
+                        {step.srNo}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </React.Fragment>
+              );
+            })}
+          </ScrollView>
+        </>
+      );
+    };
+
   const isPdf = previewUrl?.toLowerCase().includes('.pdf');
   const isImage =
     /\.(jpg|jpeg|png)$/i.test(previewUrl) ||
@@ -2884,7 +3040,6 @@ export default function Form2() {
 
   // return (
   //   <View style={styles.container}>
-  //     {/* TOOLBAR */}
   //     <View style={styles.toolbar}>
   //       <Text style={styles.toolbarTitle}>सक्षम पंचायत</Text>
   //       <Text style={styles.toolbarSubtitle}>(Good Governance)</Text>
@@ -2937,9 +3092,7 @@ export default function Form2() {
   //     {/* QUESTION CARD */}
   //     <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
   //       <View style={styles.card}>
-  //         {/* Heading: format -> 1.{questionId}: Question Name */}
   //         <Text style={styles.heading}>
-  //           {/* {`1.${questionIdForHeading}: `}{activeQuestionName || "प्रश्न"} */}
   //           {`${formNo}.${currentQuestionNumber}: ${
   //             activeQuestionName || 'प्रश्न'
   //           }`}
@@ -2989,102 +3142,122 @@ export default function Form2() {
   //                 </View>
   //               );
   //             })}
-
-  //             <View style={styles.btnRow}>
-  //               {activeStepIndex > 0 && (
-  //                 <TouchableOpacity style={styles.prevBtn} onPress={handlePrev}>
-  //                   <Text style={styles.btnText}>मागील</Text>
-  //                 </TouchableOpacity>
-  //               )}
-  //               {/* ================= NORMAL SUBMIT ================= */}
-  //               {!isFinalSubmitted &&
-  //                 !(isLastQuestion && isLastQuestionSubmitted) && (
-  //                   <TouchableOpacity
-  //                     style={styles.prevBtn}
-  //                     onPress={handleSubmit}
-  //                   >
-  //                     <Text style={styles.btnText}>सबमिट</Text>
-  //                   </TouchableOpacity>
-  //                 )}
-
-  //               {/* ================= FINAL SUBMIT (ONLY AFTER LAST SUBMIT) ================= */}
-  //               {isLastQuestion && isLastQuestionSubmitted && (
-  //                 <TouchableOpacity
-  //                   style={styles.submitBtn}
-  //                   onPress={finalSubmitForm} // 👈 your final submit API
-  //                 >
-  //                   <Text style={styles.btnText}>फायनल सबमिट</Text>
-  //                 </TouchableOpacity>
-  //               )}
-
-  //               {activeStepIndex < totalSteps - 1 && (
-  //                 <TouchableOpacity style={styles.nextBtn} onPress={handleNext}>
-  //                   <Text style={styles.btnText}>पुढे</Text>
-  //                 </TouchableOpacity>
-  //               )}
-  //             </View>
   //           </>
   //         )}
   //       </View>
 
-  //       <Modal
-  //         visible={previewVisible}
-  //         animationType="slide"
-  //         onRequestClose={() => setPreviewVisible(false)}
-  //       >
-  //         <View style={{ flex: 1 }}>
-  //           <View
-  //             style={{
-  //               height: 50,
-  //               flexDirection: 'row',
-  //               justifyContent: 'space-between',
-  //               alignItems: 'center',
-  //               paddingHorizontal: 15,
-  //               backgroundColor: '#fff',
-  //             }}
-  //           >
-  //             <Text
-  //               style={{
-  //                 fontSize: 16,
-  //                 fontWeight: 'bold',
-  //                 flex: 1,
-  //               }}
-  //               numberOfLines={1}
+  //       <View style={styles.btnWrapper}>
+  //         {/* Row 1: Actions (Save Step & Final Submit) */}
+  //         <View style={styles.btnRow}>
+  //           {!isFormFinalSubmitted && (
+  //             <TouchableOpacity
+  //               style={[styles.btn, styles.submitBtn]}
+  //               onPress={handleSubmit}
+  //               activeOpacity={0.8}
   //             >
-  //               {previewFileName}
-  //             </Text>
-
-  //             <TouchableOpacity onPress={() => setPreviewVisible(false)}>
-  //               <Text style={{ color: 'red' }}>Close</Text>
+  //               <Text style={styles.btnText}>सबमिट</Text>
   //             </TouchableOpacity>
-  //           </View>
+  //           )}
 
-  //           {isPdf ? (
-  //             <Pdf
-  //               source={{ uri: previewUrl }}
-  //               style={{ flex: 1 }}
-  //               trustAllCerts={false}
-  //             />
-  //           ) : isImage ? (
-  //             <Image
-  //               source={{ uri: previewUrl }}
-  //               style={{ flex: 1 }}
-  //               resizeMode="contain"
-  //             />
-  //           ) : (
-  //             <View
-  //               style={{
-  //                 flex: 1,
-  //                 justifyContent: 'center',
-  //                 alignItems: 'center',
-  //               }}
+  //           {allStepsSubmitted && !isFormFinalSubmitted && (
+  //             <TouchableOpacity
+  //               style={[styles.btn, styles.finalSubmitBtn]}
+  //               onPress={finalSubmitForm}
+  //               activeOpacity={0.8}
   //             >
-  //               <Text>Preview not available.</Text>
-  //             </View>
+  //               <Text style={styles.btnText}>फायनल सबमिट</Text>
+  //             </TouchableOpacity>
   //           )}
   //         </View>
-  //       </Modal>
+
+  //         {/* Row 2: Step Navigation (Previous & Next) */}
+  //         {(activeStepIndex > 0 || activeStepIndex < totalSteps - 1) && (
+  //           <View style={styles.btnRow}>
+  //             {activeStepIndex > 0 ? (
+  //               <TouchableOpacity
+  //                 style={[styles.btn, styles.navBtn, styles.prevBtn]}
+  //                 onPress={handlePrev}
+  //                 activeOpacity={0.8}
+  //               >
+  //                 <Text style={styles.prevBtnText}>मागील</Text>
+  //               </TouchableOpacity>
+  //             ) : (
+  //               <View style={styles.placeholder} />
+  //             )}
+
+  //             {activeStepIndex < totalSteps - 1 ? (
+  //               <TouchableOpacity
+  //                 style={[styles.btn, styles.navBtn, styles.nextBtn]}
+  //                 onPress={handleNext}
+  //                 activeOpacity={0.8}
+  //               >
+  //                 <Text style={styles.btnText}>पुढे</Text>
+  //               </TouchableOpacity>
+  //             ) : (
+  //               <View style={styles.placeholder} />
+  //             )}
+  //           </View>
+  //         )}
+  //       </View>
   //     </ScrollView>
+
+  //     <Modal
+  //       visible={previewVisible}
+  //       animationType="slide"
+  //       onRequestClose={() => setPreviewVisible(false)}
+  //     >
+  //       <View style={{ flex: 1 }}>
+  //         <View
+  //           style={{
+  //             height: 50,
+  //             flexDirection: 'row',
+  //             justifyContent: 'space-between',
+  //             alignItems: 'center',
+  //             paddingHorizontal: 15,
+  //             backgroundColor: '#fff',
+  //           }}
+  //         >
+  //           <Text
+  //             style={{
+  //               fontSize: 16,
+  //               fontWeight: 'bold',
+  //               flex: 1,
+  //             }}
+  //             numberOfLines={1}
+  //           >
+  //             {previewFileName}
+  //           </Text>
+
+  //           <TouchableOpacity onPress={() => setPreviewVisible(false)}>
+  //             <Text style={{ color: 'red' }}>Close</Text>
+  //           </TouchableOpacity>
+  //         </View>
+
+  //         {isPdf ? (
+  //           <Pdf
+  //             source={{ uri: previewUrl }}
+  //             style={{ flex: 1 }}
+  //             trustAllCerts={false}
+  //           />
+  //         ) : isImage ? (
+  //           <Image
+  //             source={{ uri: previewUrl }}
+  //             style={{ flex: 1 }}
+  //             resizeMode="contain"
+  //           />
+  //         ) : (
+  //           <View
+  //             style={{
+  //               flex: 1,
+  //               justifyContent: 'center',
+  //               alignItems: 'center',
+  //             }}
+  //           >
+  //             <Text>Preview not available.</Text>
+  //           </View>
+  //         )}
+  //       </View>
+  //     </Modal>
   //     {loading && (
   //       <View style={styles.loaderOverlay}>
   //         <ActivityIndicator size="large" color="#2E7D32" />
@@ -3109,77 +3282,9 @@ export default function Form2() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.progressCard}>
-          <View style={styles.progressHeader}>
-            <View>
-              <Text style={styles.progressLabel}>Form Progress</Text>
 
-              <Text style={styles.progressSubtitle}>
-                प्रश्न {activeStepIndex + 1} पैकी {totalSteps}
-              </Text>
-            </View>
-
-            <View style={styles.progressCountBadge}>
-              <Text style={styles.progressCountText}>
-                {activeStepIndex + 1}/{totalSteps}
-              </Text>
-            </View>
-          </View>
-
-          <ScrollView
-            ref={scrollRef}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.stepContainer}
-          >
-            {steps.map((step: Step, index: number) => {
-              const isActive = index === activeStepIndex;
-              const isSubmitted = submittedSteps.includes(index);
-              const isAnswered = step.anssum > 0;
-              const isCompleted = isSubmitted || isAnswered;
-
-              return (
-                <View key={String(step.questionid)} style={styles.stepItem}>
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => onStepPress(index, step.questionid)}
-                  >
-                    <View
-                      style={[
-                        styles.stepCircle,
-                        isCompleted && styles.completedStepCircle,
-                        isActive && styles.activeStepCircle,
-                      ]}
-                    >
-                      {isCompleted && !isActive ? (
-                        <Icon name="check" size={18} color="#FFFFFF" />
-                      ) : (
-                        <Text
-                          style={[
-                            styles.stepText,
-                            isCompleted && styles.completedStepText,
-                            isActive && styles.activeStepText,
-                          ]}
-                        >
-                          {step.srNo}
-                        </Text>
-                      )}
-                    </View>
-                  </TouchableOpacity>
-
-                  {index < steps.length - 1 && (
-                    <View
-                      style={[
-                        styles.stepLine,
-                        isCompleted && styles.completedStepLine,
-                      ]}
-                    />
-                  )}
-                </View>
-              );
-            })}
-          </ScrollView>
-        </View>
+        <View style={styles.progressCard}>{renderProgress()}</View>
+        
 
         <View style={styles.questionHeader}>
           <Text style={styles.formNumberText}>FORM {formNo}</Text>
@@ -3279,62 +3384,55 @@ export default function Form2() {
 
               <View style={styles.buttonDivider} />
 
-              <View style={styles.btnRow}>
-                {activeStepIndex > 0 && (
-                  <TouchableOpacity
-                    style={styles.secondaryButton}
-                    activeOpacity={0.8}
-                    onPress={handlePrev}
-                  >
-                    <Icon name="arrow-left" size={20} color="#0B63B6" />
-
-                    <Text style={styles.secondaryButtonText}>मागील</Text>
-                  </TouchableOpacity>
-                )}
-
-                {!isFinalSubmitted &&
-                  !(isLastQuestion && isLastQuestionSubmitted) && (
+              <View style={styles.btnWrapper}>
+                <View style={styles.btnRow}>
+                  {!isFormFinalSubmitted && (
                     <TouchableOpacity
-                      style={styles.saveButton}
-                      activeOpacity={0.8}
+                      style={[styles.btn, styles.submitBtn]}
                       onPress={handleSubmit}
+                      activeOpacity={0.8}
                     >
-                      <Icon
-                        name="content-save-check-outline"
-                        size={20}
-                        color="#FFFFFF"
-                      />
-
-                      <Text style={styles.primaryButtonText}>सबमिट</Text>
+                      <Text style={styles.btnText}>सबमिट</Text>
                     </TouchableOpacity>
                   )}
 
-                {isLastQuestion && isLastQuestionSubmitted && (
-                  <TouchableOpacity
-                    style={styles.finalSubmitButton}
-                    activeOpacity={0.8}
-                    onPress={finalSubmitForm}
-                  >
-                    <Icon
-                      name="check-decagram-outline"
-                      size={20}
-                      color="#FFFFFF"
-                    />
+                  {allStepsSubmitted && !isFormFinalSubmitted && (
+                    <TouchableOpacity
+                      style={[styles.btn, styles.finalSubmitBtn]}
+                      onPress={finalSubmitForm}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.btnText}>फायनल सबमिट</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
 
-                    <Text style={styles.primaryButtonText}>फायनल सबमिट</Text>
-                  </TouchableOpacity>
-                )}
+                {(activeStepIndex > 0 || activeStepIndex < totalSteps - 1) && (
+                  <View style={styles.btnRow}>
+                    {activeStepIndex > 0 ? (
+                      <TouchableOpacity
+                        style={[styles.btn, styles.navBtn, styles.prevBtn]}
+                        onPress={handlePrev}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.prevBtnText}>मागील</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={styles.placeholder} />
+                    )}
 
-                {activeStepIndex < totalSteps - 1 && (
-                  <TouchableOpacity
-                    style={styles.nextButton}
-                    activeOpacity={0.8}
-                    onPress={handleNext}
-                  >
-                    <Text style={styles.primaryButtonText}>पुढे</Text>
-
-                    <Icon name="arrow-right" size={20} color="#FFFFFF" />
-                  </TouchableOpacity>
+                    {activeStepIndex < totalSteps - 1 ? (
+                      <TouchableOpacity
+                        style={[styles.btn, styles.navBtn, styles.nextBtn]}
+                        onPress={handleNext}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.btnText}>पुढे</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={styles.placeholder} />
+                    )}
+                  </View>
                 )}
               </View>
             </>
@@ -3397,6 +3495,14 @@ export default function Form2() {
         </View>
       </Modal>
 
+      <CustomAlert
+        visible={alertVisible}
+        type={alertType}
+        title={alertTitle}
+        message={alertMessage}
+        onClose={() => setAlertVisible(false)}
+      />
+
       {loading && (
         <View style={styles.loaderOverlay}>
           <View style={styles.loaderCard}>
@@ -3411,6 +3517,104 @@ export default function Form2() {
 }
 
 // const styles = StyleSheet.create({
+//   stepContainer: {
+//     flexDirection: 'row',
+//     justifyContent: 'center',
+//     paddingVertical: 15,
+//     backgroundColor: '#e8e8e8',
+//     paddingHorizontal: 8,
+//   },
+//   btnWrapper: {
+//     width: '100%',
+//     paddingHorizontal: 16,
+//     marginVertical: 16,
+//     gap: 10, // vertical spacing between rows
+//   },
+//   btnRow: {
+//     flexDirection: 'row',
+//     alignItems: 'center',
+//     justifyContent: 'space-between',
+//     gap: 10,
+//     width: '100%',
+//   },
+//   btn: {
+//     flex: 1,
+//     paddingVertical: 13,
+//     paddingHorizontal: 8,
+//     borderRadius: 8,
+//     alignItems: 'center',
+//     justifyContent: 'center',
+//     minHeight: 46,
+//   },
+//   placeholder: {
+//     flex: 1,
+//   },
+
+//   saveBtn: {
+//     backgroundColor: '#0B4FA3',
+//   },
+//   finalSubmitBtn: {
+//     backgroundColor: '#1B8F4D',
+//   },
+//   navBtn: {
+//     backgroundColor: '#0B4FA3',
+//   },
+//   submitBtn: {
+//     backgroundColor: 'rgb(236, 190, 62)',
+//   },
+//   prevBtn: {
+//     backgroundColor: '#EAEAEA',
+//     borderWidth: 1,
+//     borderColor: '#CCCCCC',
+//   },
+//   nextBtn: {
+//     backgroundColor: '#0B4FA3',
+//   },
+
+//   btnText: {
+//     color: '#FFFFFF',
+//     fontSize: 15,
+//     fontWeight: '600',
+//     textAlign: 'center',
+//   },
+//   prevBtnText: {
+//     color: '#333333',
+//     fontSize: 15,
+//     fontWeight: '600',
+//     textAlign: 'center',
+//   },
+
+//   finalsubmitBtn: {
+//     backgroundColor: '#1b8f4d',
+//     padding: 15,
+//     borderRadius: 10,
+//     alignItems: 'center',
+//   },
+//   submitText: {
+//     color: 'white',
+//     fontSize: 16,
+//     fontWeight: '600',
+//   },
+//   // btnRow: {
+//   //   flexDirection: 'row',
+//   //   justifyContent: 'space-between',
+//   //   marginVertical: 15,
+//   //   alignItems: 'center',
+//   //   width: '100%',
+//   // },
+//   // nextBtn: {
+//   //   backgroundColor: '#0B4FA3',
+//   //   paddingVertical: 15,
+//   //   paddingHorizontal: 25,
+//   //   borderRadius: 10,
+//   // },
+
+//   // prevBtn: {
+//   //   backgroundColor: '#0B4FA3',
+//   //   paddingVertical: 15,
+//   //   paddingHorizontal: 25,
+//   //   borderRadius: 10,
+//   // },
 //   container: { flex: 1, backgroundColor: '#e8e8e8' },
 
 //   // Toolbar
@@ -3424,12 +3628,12 @@ export default function Form2() {
 //   toolbarSubtitle: { color: 'white', fontSize: 14, marginTop: 4 },
 
 //   // Steps
-//   stepContainer: {
-//     flexDirection: 'row',
-//     justifyContent: 'center',
-//     paddingVertical: 15,
-//     backgroundColor: '#e8e8e8',
-//   },
+//   // stepContainer: {
+//   //   flexDirection: 'row',
+//   //   justifyContent: 'center',
+//   //   paddingVertical: 15,
+//   //   backgroundColor: '#e8e8e8',
+//   // },
 //   stepCircle: {
 //     width: 30,
 //     height: 30,
@@ -3501,48 +3705,34 @@ export default function Form2() {
 //     padding: 10,
 //     borderRadius: 8,
 //   },
-//   noFile: { marginLeft: 10 },
+//   noFile: {
+//     marginLeft: 10,
+//   },
 
-//   tooltipText: { color: 'red', marginTop: 4 },
-//   tooltipText1: { color: 'blue', marginTop: 4 },
-//   note: { color: 'red', marginTop: 10, fontSize: 12 },
+//   tooltipText: {
+//     color: 'red',
+//     marginTop: 4,
+//   },
+//   tooltipText1: {
+//     color: 'blue',
+//     marginTop: 4,
+//   },
+//   note: {
+//     color: 'red',
+//     marginTop: 10,
+//     fontSize: 12,
+//   },
 
 //   fileItem: {
 //     flexDirection: 'row',
 //     justifyContent: 'space-between',
 //     marginTop: 10,
 //   },
-
-//   submitBtn: {
-//     backgroundColor: '#1b8f4d',
-//     padding: 15,
-//     borderRadius: 10,
-//     marginTop: 25,
-//     alignItems: 'center',
-//   },
-//   submitText: { color: 'white', fontSize: 16, fontWeight: '600' },
-//   btnRow: {
-//     flexDirection: 'row',
-//     justifyContent: 'space-between',
-//     marginVertical: 15,
-//   },
-//   nextBtn: {
-//     backgroundColor: '#0B4FA3',
-//     paddingVertical: 10,
-//     paddingHorizontal: 25,
-//     borderRadius: 10,
-//   },
-//   prevBtn: {
-//     backgroundColor: '#0B4FA3',
-//     paddingVertical: 10,
-//     paddingHorizontal: 25,
-//     borderRadius: 10,
-//   },
-//   btnText: {
-//     color: '#fff',
-//     fontSize: 16,
-//     fontWeight: '600',
-//   },
+//   // btnText: {
+//   //   color: '#fff',
+//   //   fontSize: 16,
+//   //   fontWeight: '600',
+//   // },
 //   tableContainer: {
 //     borderWidth: 1,
 //     borderColor: '#ddd',
@@ -3653,6 +3843,140 @@ const COLORS = {
 };
 
 const styles = StyleSheet.create({
+
+  progressCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#E5EAE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#CBD6E0',
+  },
+
+  progressCircleCompleted: {
+    backgroundColor: COLORS.completed,
+    borderColor: COLORS.completed,
+  },
+
+  progressCircleActive: {
+    borderColor: '#1976D2',
+    borderWidth: 2,
+  },
+
+  progressText: {
+    color: '#65716B',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  progressTextCompleted: {
+    color: '#FFFFFF',
+  },
+
+  progressLine: {
+    width: 19,
+    height: 2,
+    backgroundColor: '#D7E0E8',
+  },
+
+  progressLineCompleted: {
+    backgroundColor: COLORS.completed,
+  },
+
+  progressTextActive: {
+    color: '#FFFFFF',
+  },
+
+  progressCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    marginTop: 14,
+    paddingVertical: 17,
+
+    elevation: 2,
+
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+  },
+  currentStepBorder: {
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+  },
+
+  btnWrapper: {
+    width: '100%',
+    paddingHorizontal: 16,
+    marginVertical: 8,
+    gap: 10,
+  },
+  btnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    width: '100%',
+  },
+  btn: {
+    flex: 1,
+    paddingVertical: 13,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 46,
+  },
+  placeholder: {
+    flex: 1,
+  },
+
+  saveBtn: {
+    backgroundColor: '#0B4FA3',
+  },
+  finalSubmitBtn: {
+    backgroundColor: '#1B8F4D',
+  },
+  navBtn: {
+    backgroundColor: '#0B4FA3',
+  },
+  submitBtn: {
+    backgroundColor: 'rgb(236, 190, 62)',
+  },
+  prevBtn: {
+    backgroundColor: '#EAEAEA',
+    borderWidth: 1,
+    borderColor: '#CCCCCC',
+  },
+  nextBtn: {
+    backgroundColor: '#0B4FA3',
+  },
+
+  btnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  prevBtnText: {
+    color: '#333333',
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+
+  finalsubmitBtn: {
+    backgroundColor: '#1b8f4d',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  submitText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
@@ -3667,8 +3991,6 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 50,
   },
-
-  /* ================= HEADER ================= */
 
   toolbar: {
     minHeight: 94,
@@ -3707,22 +4029,25 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  /* ================= PROGRESS ================= */
+  // progressCard: {
+  //   backgroundColor: COLORS.card,
+  //   borderRadius: 16,
+  //   paddingHorizontal: 14,
+  //   paddingVertical: 15,
 
-  progressCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 15,
+  //   elevation: 3,
+  //   shadowColor: '#000000',
+  //   shadowOpacity: 0.08,
+  //   shadowRadius: 8,
+  //   shadowOffset: {
+  //     width: 0,
+  //     height: 3,
+  //   },
+  // },
 
-    elevation: 3,
-    shadowColor: '#000000',
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
+   progressContainer: {
+    paddingHorizontal: 16,
+    alignItems: 'center',
   },
 
   progressHeader: {
@@ -3816,8 +4141,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.completed,
   },
 
-  /* ================= QUESTION HEADER ================= */
-
   questionHeader: {
     marginTop: 22,
     marginBottom: 13,
@@ -3825,36 +4148,27 @@ const styles = StyleSheet.create({
 
   formNumberText: {
     color: COLORS.primary,
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '600',
     letterSpacing: 0.5,
+    paddingLeft: 10,
   },
 
   questionHeaderTitle: {
     color: COLORS.textPrimary,
-    fontSize: 20,
+    fontSize: 14,
     lineHeight: 29,
     fontWeight: '700',
     marginTop: 4,
   },
 
-  /* ================= CARD ================= */
-
   card: {
     backgroundColor: COLORS.card,
     borderRadius: 18,
-    paddingHorizontal: 15,
-    paddingTop: 17,
-    paddingBottom: 18,
-
-    elevation: 3,
-    shadowColor: '#000000',
-    shadowOpacity: 0.08,
-    shadowRadius: 9,
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
+    elevation: 1,
   },
 
   cardTopSection: {
@@ -3878,7 +4192,7 @@ const styles = StyleSheet.create({
 
   heading: {
     color: COLORS.textPrimary,
-    fontSize: 17,
+    fontSize: 15,
     lineHeight: 24,
     fontWeight: '700',
   },
@@ -3892,14 +4206,11 @@ const styles = StyleSheet.create({
   cardDivider: {
     height: 1,
     backgroundColor: '#E4E9E6',
-    marginTop: 17,
-    marginBottom: 5,
+    marginTop: 10,
   },
 
-  /* ================= FIELD ================= */
-
   fieldWrapper: {
-    marginTop: 20,
+    marginTop: 15,
   },
 
   fieldLabelRow: {
@@ -3922,23 +4233,23 @@ const styles = StyleSheet.create({
   fieldNumberText: {
     color: COLORS.primary,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '600',
   },
 
   label: {
     flex: 1,
     color: COLORS.textPrimary,
-    fontSize: 15,
+    fontSize: 14,
     lineHeight: 23,
     fontWeight: '600',
   },
 
   controlContainer: {
-    marginLeft: 35,
+    marginLeft: 20,
   },
 
   input: {
-    minHeight: 52,
+    minHeight: 48,
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 12,
@@ -3950,7 +4261,7 @@ const styles = StyleSheet.create({
   },
 
   dropdown: {
-    minHeight: 52,
+    minHeight: 48,
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 12,
@@ -4140,14 +4451,8 @@ const styles = StyleSheet.create({
   buttonDivider: {
     height: 1,
     backgroundColor: '#E4E9E6',
-    marginTop: 28,
-    marginBottom: 17,
-  },
-
-  btnRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
+    marginTop: 20,
+    marginBottom: 10,
   },
 
   secondaryButton: {
@@ -4165,7 +4470,7 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     color: COLORS.primary,
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
     marginLeft: 6,
   },
 
@@ -4193,7 +4498,7 @@ const styles = StyleSheet.create({
 
   finalSubmitButton: {
     flex: 1,
-    minHeight: 50,
+    minHeight: 48,
     paddingHorizontal: 14,
     borderRadius: 11,
     backgroundColor: COLORS.completed,
@@ -4205,26 +4510,24 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
     marginHorizontal: 6,
   },
 
-  submitBtn: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: 11,
-    backgroundColor: COLORS.completed,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  // submitBtn: {
+  //   flex: 1,
+  //   minHeight: 48,
+  //   borderRadius: 11,
+  //   backgroundColor: COLORS.completed,
+  //   alignItems: 'center',
+  //   justifyContent: 'center',
+  // },
 
-  submitText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-
-  /* ================= LOADER ================= */
+  // submitText: {
+  //   color: '#FFFFFF',
+  //   fontSize: 15,
+  //   fontWeight: '700',
+  // },
 
   questionLoaderContainer: {
     minHeight: 220,
@@ -4293,8 +4596,8 @@ const styles = StyleSheet.create({
   previewFileName: {
     flex: 1,
     color: COLORS.textPrimary,
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '600',
     marginHorizontal: 11,
   },
 
@@ -4320,8 +4623,8 @@ const styles = StyleSheet.create({
 
   previewUnavailableTitle: {
     color: COLORS.textPrimary,
-    fontSize: 17,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '600',
     marginTop: 13,
   },
 
