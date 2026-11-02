@@ -41,6 +41,7 @@ import DivisionForm from "../screens/DivisionForm";
 import DivPreviewScreen from "../screens/DivPreviewScreen";
 import StateForm from "../screens/StateForm";
 import StatePreviewScreen from "../screens/StatePreviewScreen";
+import StateDashboard from "../screens/StateDashboard";
 
 export type RootStackParamList = {
   Splash: undefined;
@@ -79,6 +80,7 @@ export type RootStackParamList = {
   DivPreviewScreen:undefined
   StateForm:undefined
   StatePreviewScreen:undefined
+  StateDashboard:undefined
 
 
 };
@@ -221,6 +223,10 @@ useEffect(() => {
           <Stack.Screen
             name="BDODashboardHome"
             component={BDODashboardHome}
+          />
+          <Stack.Screen
+            name="StateDashboard"
+            component={StateDashboard}
           />
 
           <Stack.Screen

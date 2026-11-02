@@ -27,13 +27,13 @@ const CustomDrawerContent = (props: any) => {
       />
 
      
-      {/* <DrawerItem
+      <DrawerItem
         label="डॅशबोर्ड"
         icon={({ size }) => (
           <Icon name="view-dashboard-outline" size={size} color="#64748B" />
         )}
         onPress={() => navigation.navigate('डॅशबोर्ड')}
-      /> */}
+      />
 
       {/* PROFILE */}
       <DrawerItem

@@ -21,7 +21,7 @@ import { createDrawerNavigator } from '@react-navigation/drawer';
 import BDODashboardHome from '../screens/BDODashboardHome';
 import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import CustomDrawerContent from './CustomDrawerContent';
 import GrampanchayatReportScreen from '../screens/GrampanchayatReportScreen';
 import GPMarksReportScreen from '../screens/GPMarksReportScreen';
@@ -29,6 +29,8 @@ import LDMSReportScreen from '../screens/LDMSReportScreen';
 import ScrutinyReportScreen from '../screens/ScrutinyReportScreen';
 import WeeklyVisitReportScreen from '../screens/WeeklyVisitReportScreen';
 import WeekReportScreen from '../screens/WeekReportScreen';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import StateDashboard from '../screens/StateDashboard';
 
 interface DrawerNavigatorProps {
   userID: string;
@@ -46,6 +48,26 @@ const BDODrawerNavigator: React.FC<DrawerNavigatorProps> = ({
   const { logout } = useAuth();
 
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
+
+  const [isSTA, setIsSTA] = useState(false);
+const [roleLoaded, setRoleLoaded] = useState(false);
+
+useEffect(() => {
+  const getRoleFlags = async () => {
+    try {
+      const storedIsSTA = await AsyncStorage.getItem('isSTA');
+
+      setIsSTA(storedIsSTA === 'true');
+    } catch (error) {
+      console.error('Error fetching role flags:', error);
+      setIsSTA(false);
+    } finally {
+      setRoleLoaded(true);
+    }
+  };
+
+  getRoleFlags();
+}, []);
 
   const handleLogout = () => {
     setLogoutModalVisible(true);
@@ -95,7 +117,8 @@ const BDODrawerNavigator: React.FC<DrawerNavigatorProps> = ({
         />
         <Drawer.Screen
           name="डॅशबोर्ड"
-          component={BDODashboardHome}
+          //component={BDODashboardHome}
+          component={isSTA ? StateDashboard : BDODashboardHome}
           initialParams={{
             userID,
             bearerToken,
