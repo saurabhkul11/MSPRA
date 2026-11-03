@@ -114,11 +114,7 @@ const Dropdown = ({label, value, options, onChange}: DropdownProps) => (
   </View>
 );
 
-const PerformanceTable = ({
-  title,
-  data,
-  positive,
-}: {
+const PerformanceTable = ({title,data,positive,}: {
   title: string;
   data: string[][];
   positive: boolean;

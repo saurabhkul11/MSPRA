@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-shadow */
 /* eslint-disable react/no-unstable-nested-components */
 /* eslint-disable react-native/no-inline-styles */
 /* eslint-disable @typescript-eslint/no-unused-vars */
@@ -31,6 +30,7 @@ import WeeklyVisitReportScreen from '../screens/WeeklyVisitReportScreen';
 import WeekReportScreen from '../screens/WeekReportScreen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import StateDashboard from '../screens/StateDashboard';
+import CEODashboard from '../screens/CEODashboard';
 
 interface DrawerNavigatorProps {
   userID: string;
@@ -45,29 +45,33 @@ const BDODrawerNavigator: React.FC<DrawerNavigatorProps> = ({
   type RootNav = NativeStackNavigationProp<RootStackParamList>;
 
   const navigation = useNavigation<RootNav>();
-  const { logout } = useAuth();
 
+  const { logout } = useAuth();
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
 
   const [isSTA, setIsSTA] = useState(false);
-const [roleLoaded, setRoleLoaded] = useState(false);
+  const [isCEO, setIsCEO] = useState(false);
+  const [roleLoaded, setRoleLoaded] = useState(false);
 
-useEffect(() => {
-  const getRoleFlags = async () => {
-    try {
-      const storedIsSTA = await AsyncStorage.getItem('isSTA');
+  useEffect(() => {
+    const getRoleFlags = async () => {
+      try {
+        const storedIsSTA = await AsyncStorage.getItem('isSTA');
+        setIsSTA(storedIsSTA === 'true');
 
-      setIsSTA(storedIsSTA === 'true');
-    } catch (error) {
-      console.error('Error fetching role flags:', error);
-      setIsSTA(false);
-    } finally {
-      setRoleLoaded(true);
-    }
-  };
+        const storedIsCEO = await AsyncStorage.getItem('isCEO');
+        setIsCEO(storedIsCEO === 'true');
+      } catch (error) {
+        console.error('Error fetching role flags:', error);
+        setIsSTA(false);
+        setIsCEO(false);
+      } finally {
+        setRoleLoaded(true);
+      }
+    };
 
-  getRoleFlags();
-}, []);
+    getRoleFlags();
+  }, []);
 
   const handleLogout = () => {
     setLogoutModalVisible(true);
@@ -94,19 +98,14 @@ useEffect(() => {
     <SafeAreaView style={{ flex: 1 }} edges={['top']}>
       <Drawer.Navigator
         initialRouteName="मुख्यपृष्ठ"
-         drawerContent={props => (
-        <CustomDrawerContent
-          {...props}
-          handleLogout={handleLogout}
-        />
-      )}
+        drawerContent={props => (
+          <CustomDrawerContent {...props} handleLogout={handleLogout} />
+        )}
         screenOptions={{
           headerShown: false,
           drawerType: 'front',
         }}
       >
-        
-
         <Drawer.Screen
           name="मुख्यपृष्ठ"
           component={BDODashboard}
@@ -118,7 +117,10 @@ useEffect(() => {
         <Drawer.Screen
           name="डॅशबोर्ड"
           //component={BDODashboardHome}
-          component={isSTA ? StateDashboard : BDODashboardHome}
+          //component={isSTA ? StateDashboard : BDODashboardHome}
+          component={
+            isSTA ? StateDashboard : isCEO ? CEODashboard : BDODashboardHome
+          }
           initialParams={{
             userID,
             bearerToken,
@@ -145,37 +147,24 @@ useEffect(() => {
         />
 
         <Drawer.Screen
-        name="GrampanchayatReport"
-        component={GrampanchayatReportScreen}
-      />
+          name="GrampanchayatReport"
+          component={GrampanchayatReportScreen}
+        />
 
-      <Drawer.Screen
-        name="WeeklyVisitReport"
-        component={WeeklyVisitReportScreen}
-      />
+        <Drawer.Screen
+          name="WeeklyVisitReport"
+          component={WeeklyVisitReportScreen}
+        />
 
-      <Drawer.Screen
-        name="LDMSReport"
-        component={LDMSReportScreen}
-      />
+        <Drawer.Screen name="LDMSReport" component={LDMSReportScreen} />
 
-      <Drawer.Screen
-        name="GPMarksReport"
-        component={GPMarksReportScreen}
-      />
+        <Drawer.Screen name="GPMarksReport" component={GPMarksReportScreen} />
 
-      <Drawer.Screen
-        name="ScrutinyReport"
-        component={ScrutinyReportScreen}
-      />
+        <Drawer.Screen name="ScrutinyReport" component={ScrutinyReportScreen} />
 
-      <Drawer.Screen
-        name="साप्ताहिक अहवाल"
-        component={WeekReportScreen}
-      />
+        <Drawer.Screen name="साप्ताहिक अहवाल" component={WeekReportScreen} />
 
         {/* LOGOUT */}
-        
       </Drawer.Navigator>
       <Modal
         visible={logoutModalVisible}
@@ -226,7 +215,7 @@ const styles = StyleSheet.create({
     width: 62,
     height: 62,
     borderRadius: 31,
-    backgroundColor: '#E7F0FB', // light blue
+    backgroundColor: '#E7F0FB',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
@@ -236,7 +225,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 48,
     borderRadius: 10,
-    backgroundColor: '#0B4FA3', // theme blue
+    backgroundColor: '#0B4FA3',
     flexDirection: 'row',
     gap: 7,
     justifyContent: 'center',

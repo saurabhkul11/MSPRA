@@ -42,6 +42,7 @@ import DivPreviewScreen from "../screens/DivPreviewScreen";
 import StateForm from "../screens/StateForm";
 import StatePreviewScreen from "../screens/StatePreviewScreen";
 import StateDashboard from "../screens/StateDashboard";
+import CEODashboard from "../screens/CEODashboard";
 
 export type RootStackParamList = {
   Splash: undefined;
@@ -81,6 +82,7 @@ export type RootStackParamList = {
   StateForm:undefined
   StatePreviewScreen:undefined
   StateDashboard:undefined
+  CEODashboard:undefined
 
 
 };
@@ -227,6 +229,11 @@ useEffect(() => {
           <Stack.Screen
             name="StateDashboard"
             component={StateDashboard}
+          />
+
+          <Stack.Screen
+            name="CEODashboard"
+            component={CEODashboard}
           />
 
           <Stack.Screen
